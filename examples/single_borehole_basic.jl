@@ -29,7 +29,7 @@ materials = HomogenousMaterialProperties{Float_used}(
 # =============================================================================
 # Borehole geometry
 # =============================================================================
-# Deep coaxial borehole heat exchanger (3500m depth)
+# Deep coaxial borehole heat exchanger (350m depth) shallow to make it faster to simulate on CPU
 # Inner pipe is insulated down to 1000m to reduce thermal short-circuiting
 borehole = Borehole{Float_used}(
     0.0,             # xc [m]
@@ -84,7 +84,7 @@ println("Grid size: $(length(gridx)) x $(length(gridy)) x $(length(gridz))")
 T0 = initial_condition_thermal_gradient(
     backend, Float_used, gridx, gridy, gridz;
     T_surface=2.29,    # surface temperature [°C]
-    gradient=0.35     # thermal gradient [K/m]
+    gradient=0.35     # thermal gradient [K/m] (10x higher than typical to speed up testing on CPU)
 );
 
 
