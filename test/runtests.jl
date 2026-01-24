@@ -1,6 +1,4 @@
-using GeothermalWells
-using Test
+using TestItemRunner
+using TestItems
 
-@testset "GeothermalWells.jl" begin
-    # Write your tests here.
-end
+@run_package_tests

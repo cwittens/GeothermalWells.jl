@@ -20,13 +20,13 @@ end
 
 
 """
-    create_uniform_gridz_with_borehole_depths(zmin, zmax, dz, boreholes, backend)
+    create_uniform_gridz_with_borehole_depths(; zmin, zmax, dz, boreholes, backend)
 
 Create vertical grid including all borehole depths.
 
 Ensures each borehole depth `h` is a grid point for accurate advection interpolation.
 """
-function create_uniform_gridz_with_borehole_depths(zmin, zmax, dz, boreholes, backend)
+function create_uniform_gridz_with_borehole_depths(; zmin, zmax, dz, boreholes, backend)
     Float_used = eltype(boreholes[1].h)
     # Create uniform grid
     gridz = collect(zmin:dz:zmax)
