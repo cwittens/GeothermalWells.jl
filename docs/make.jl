@@ -9,7 +9,7 @@ makedocs(;
     sitename="GeothermalWells.jl",
     format=Documenter.HTML(;
         canonical="https://cwittens.github.io/GeothermalWells.jl",
-        edit_link="master",
+        edit_link="main",
         assets=String[],
     ),
     pages=[
@@ -19,5 +19,5 @@ makedocs(;
 
 deploydocs(;
     repo="github.com/cwittens/GeothermalWells.jl",
-    devbranch="master",
+    devbranch="main",
 )
