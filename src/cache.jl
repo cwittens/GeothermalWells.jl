@@ -115,41 +115,10 @@ function create_cache(; backend, gridx, gridy, gridz, materials, boreholes, inle
     return cache
 end
 
-# """
-#     ode_default_options()
-
-# Return the default options for OrdinaryDiffEq's `solve`. Pass `ode_default_options()...` to `solve`
-# For example, use `solve(ode, alg; ode_default_options()...)`.
-# """
-# function ode_default_options()
-#     # TODO: check max_stages performance differences
-#     return (; 
-#     # alg=ROCK2(max_stages=100, eigen_est=eigen_estimator),
-#         save_everystep=false, 
-#         # adaptive=false, 
-#         # maxiters=Int(1e10)
-#         )
-# end
-
 
 
 # callbacks
 # TODO: save T_outlet in the future
-
-
-# function save_julia_array_and_write_to_VTK_prepend_path(u, t, integrator, prepend_file)
-#     u_cpu = copy(adapt(CPU(), u))
-#     gridx = integrator.p.gridx
-#     gridy = integrator.p.gridy
-#     gridz = integrator.p.gridz
-#     file_name = prepend_file * "temperature"
-#     t = isinteger(t) ? Int(t) : t # make an int if possible for nicer file names
-#     save(path, file_name, u_cpu, gridx, gridy, gridz, t)
-#     return u_cpu
-# end
-
-
-
 
 
 """
@@ -233,4 +202,4 @@ end
 
 
 
-# TODO: semi discretize function shit
+# TODO: semi discretize function stuff

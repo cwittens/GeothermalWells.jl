@@ -1,5 +1,6 @@
 [deps]
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
+OrdinaryDiffEqStabilizedRK = "358294b1-0aab-51c3-aafe-ad5ab194a2ad"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 TestItemRunner = "f8b46487-2199-4994-9208-9a1283c18c0a"
 TestItems = "1c621080-faea-4a02-84b6-bbd5e436b8fe"

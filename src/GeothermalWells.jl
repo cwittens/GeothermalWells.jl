@@ -37,7 +37,8 @@ export compute_domain,
     create_adaptive_grid_1d
 
 # Exports from solver.jl
-export rhs_diffusion_z!
+export rhs_diffusion_z!,
+    eigen_estimator
 
 # Exports from util.jl
 export pkg_dir,
