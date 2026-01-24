@@ -1,0 +1,10 @@
+# This file is machine-generated - editing it directly is not advised
+
+julia_version = "1.12.3"
+manifest_format = "2.0"
+project_hash = "4c4646a95539e37567f326d346f40aec5dbfde2a"
+
+[[deps.GeothermalWells]]
+path = "."
+uuid = "9e50befb-bb92-4f5a-8f9f-381c571c0866"
+version = "1.0.0-DEV"
