@@ -1,9 +1,7 @@
 module GeothermalWells
 
 using Adapt: adapt
-# using GPUArraysCore: @allowscalar
-using KernelAbstractions: @kernel, @index, @Const, @uniform, @private, @atomic, CPU
-import KernelAbstractions: zeros
+using KernelAbstractions: @kernel, @index, @Const, @uniform, @private, @atomic, CPU, zeros
 using DiffEqCallbacks: SavedValues, SavingCallback, CallbackSet
 using MuladdMacro: @muladd
 using DiffEqBase: DiscreteCallback
