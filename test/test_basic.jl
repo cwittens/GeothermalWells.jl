@@ -73,10 +73,10 @@ end
     using GeothermalWells
     using KernelAbstractions: CPU
 
-    bh = Borehole{Float32}(0.0, 0.0, 1999.0, 0.0511, 0.0114, 0.0885, 0.00833, 0.115, 11.65, 0.0)
+    bh = Borehole{Float32}(0.0, 0.0, 2000 - 1, 0.0511, 0.0114, 0.0885, 0.00833, 0.115, 11.65, 0.0)
 
     # Test domain computation
-    domain = compute_domain([bh]; buffer_x=100, buffer_y=100, buffer_z=200)
+    domain = compute_domain([bh]; buffer_x=100, buffer_y=100, buffer_z=200+1)
     @test domain.xmin == -100
     @test domain.xmax == 100
     @test domain.zmax == 2200
