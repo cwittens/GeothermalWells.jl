@@ -24,17 +24,13 @@ export AbstractMaterialProperties,
     Borehole,
     StratifiedMaterialProperties,
     HomogenousMaterialProperties,
-    AbstractInletModel,
     ConstantInlet,
     HeatExchangerInlet,
     CustomInlet,
-    initial_condition_thermal_gradient,
-    eigen_estimator_get_dmax
+    initial_condition_thermal_gradient
 
 # Exports from cache.jl
-export create_advection_index_lists,
-    create_cache,
-    save_and_print_callback,
+export create_cache,
     get_callback
 
 # Exports from grids.jl
@@ -43,10 +39,7 @@ export compute_domain,
     create_adaptive_grid_1d
 
 # Exports from solver.jl
-export rhs_diffusion_z!,
-    advection!,
-    ADI_and_ADV_callback!,
-    eigen_estimator
+export rhs_diffusion_z!
 
 # Exports from util.jl
 export pkg_dir,
