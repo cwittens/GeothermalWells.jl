@@ -7,6 +7,7 @@ using MuladdMacro: @muladd
 using DiffEqBase: DiscreteCallback
 using DelimitedFiles: readdlm
 using JLD2: @save
+using Statistics: mean
 using Plots: plot, plot!, vline!, hline!, annotate!, scatter, current, text
 
 include("physics.jl")

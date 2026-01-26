@@ -251,6 +251,7 @@ function plot_grid(gridx, gridy;
     return p
 end
 
+
 # Function to extract 1D profile along x-axis at given depth (only x > xc)
 function extract_x_profile(T, gridx, gridy, gridz, z_target, xc, yc, full_profile=false)
     # Find closest y index (at borehole center)
@@ -296,4 +297,43 @@ function extract_x_profile(T, gridx, gridy, gridz, z_target, xc, yc, full_profil
 
         return r_vals, T_profile
     end
+end
+
+"""
+    get_temperatures_along_z_single_well(ϕ_t, cache)
+
+Extract average temperatures in inner and outer pipes as a function of depth.
+
+Returns `(T_inner, T_outer, gridz_adjusted)` where temperatures are averaged
+over all grid points in each pipe section at each depth level.
+
+Note: This function is only valid for single borehole configurations.
+"""
+function get_temperatures_along_z_single_well(ϕ_t, cache)
+    if length(cache.boreholes) != 1
+        @warn "This function is only correct for single borehole setups"
+    end
+    
+    h = cache.boreholes[1].h
+    gridz = cache.gridz
+    idx_inner = cache.Idx_list_Inner
+    idx_outer = cache.Idx_list_Outer
+    
+    # Find depth indices up to borehole depth
+    Nz_till_h = sum(gridz .< h)
+    
+    T_inner = Float64[]
+    T_outer = Float64[]
+    
+    for k in 1:Nz_till_h
+        # Collect all temperatures at this depth level
+        temp_inner = [ϕ_t[k, j, i] for (i, j, bh_idx) in idx_inner]
+        temp_outer = [ϕ_t[k, j, i] for (i, j, bh_idx) in idx_outer]
+        
+        # Average over all grid points at this depth
+        push!(T_inner, mean(temp_inner))
+        push!(T_outer, mean(temp_outer))
+    end
+    
+    return T_inner, T_outer, gridz[1:Nz_till_h]
 end
