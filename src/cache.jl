@@ -122,14 +122,14 @@ end
 
 
 """
-    save_and_print_callback(saveat; print_every_n=1000, write_to_jld=false, data_folder_dir="")
+    save_and_print_callback(saveat; print_every_n=1000, write_to_jld=false, data_folder_dir="", Float_used_to_save=Float32)
 
 Create callbacks for printing progress and saving solution snapshots.
 
 Returns `(save_cb, print_cb, saved_values)` for use with ODE solver.
 Optionally writes checkpoints to JLD2 files if `write_to_jld=true`.
 """
-function save_and_print_callback(saveat; print_every_n=1000, write_to_jld=false, data_folder_dir="")
+function save_and_print_callback(saveat; print_every_n=1000, write_to_jld=false, data_folder_dir="", Float_used_to_save=Float32)
     # reset counter
     step_counter = Ref(0)
     # Callback that increments counter and prints every 100 steps
@@ -148,7 +148,7 @@ function save_and_print_callback(saveat; print_every_n=1000, write_to_jld=false,
     # to have some process for long simulations
     print_cb = DiscreteCallback(print_condition, print_affect!, save_positions=(false, false))
 
-    saved_values = SavedValues(Float64, Array{Float32,3})
+    saved_values = SavedValues(Float64, Array{Float_used_to_save,3})
 
     if write_to_jld
 

@@ -115,7 +115,7 @@ tspan = (0.0, 800.0)
 prob = ODEProblem(rhs_diffusion_z!, T0, tspan, cache)
 
 # Save solution at regular intervals
-n_saves = 11  # save every month + initial
+n_saves = 11  # save initial + 10 more times
 saveat = range(tspan..., n_saves)
 callback, saved_values = get_callback(
     saveat=saveat,

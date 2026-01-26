@@ -250,3 +250,50 @@ function plot_grid(gridx, gridy;
 
     return p
 end
+
+# Function to extract 1D profile along x-axis at given depth (only x > xc)
+function extract_x_profile(T, gridx, gridy, gridz, z_target, xc, yc, full_profile=false)
+    # Find closest y index (at borehole center)
+    y_idx = argmin(abs.(gridy .- yc))
+
+    # Interpolate in z-direction
+    if z_target <= gridz[1]
+        @warn "Requested z_target $z_target is below the grid minimum $(gridz[1]). Using first layer."
+        T_full = T[1, y_idx, :]
+    elseif z_target >= gridz[end]
+        @warn "Requested z_target $z_target is above the grid maximum $(gridz[end]). Using last layer."
+        # Above grid, use last layer
+        T_full = T[end, y_idx, :]
+    else
+        # Find bracketing indices
+        z_idx_lower = findlast(gridz .<= z_target)
+        z_idx_upper = findfirst(gridz .>= z_target)
+
+        if z_idx_lower == z_idx_upper
+            # Exactly on a grid point
+            T_full = T[z_idx_lower, y_idx, :]
+        else
+            # Linear interpolation between layers
+            z_lower = gridz[z_idx_lower]
+            z_upper = gridz[z_idx_upper]
+            weight_upper = (z_target - z_lower) / (z_upper - z_lower)
+            weight_lower = 1.0 - weight_upper
+
+            T_full = weight_lower * T[z_idx_lower, y_idx, :] + weight_upper * T[z_idx_upper, y_idx, :]
+        end
+    end
+
+    # Filter for x > xc
+    if full_profile
+        return gridx, T_full
+    else
+        mask = gridx .> xc
+        x_filtered = gridx[mask]
+        T_profile = T_full[mask]
+
+        # Compute radial distances (now just x - xc, not absolute value)
+        r_vals = x_filtered .- xc
+
+        return r_vals, T_profile
+    end
+end
