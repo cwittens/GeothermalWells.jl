@@ -190,7 +190,7 @@ Includes ADI+advection callback, progress printing, and solution saving.
 Returns `(callback, saved_values)`.
 """
 function get_callback(; saveat, print_every_n=1000, write_to_jld=false, data_folder_dir="")
-    save_cb, print_cb, saved_values = save_and_print_callback(saveat; print_every_n=1000, write_to_jld=write_to_jld, data_folder_dir=data_folder_dir)
+    save_cb, print_cb, saved_values = save_and_print_callback(saveat; print_every_n=print_every_n, write_to_jld=write_to_jld, data_folder_dir=data_folder_dir)
 
     ADI_and_ADV = DiscreteCallback((u, t, integrator) -> true, ADI_and_ADV_callback!, save_positions=(false, false))
 
