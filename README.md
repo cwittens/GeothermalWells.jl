@@ -46,7 +46,7 @@ prob = ODEProblem(rhs_diffusion_z!, T0, (0.0, 3600.0), cache)
 solve(prob, ROCK2(), dt=60.0)
 ```
 
-See the `examples/` folder for complete working examples.
+See the [examples/](examples/) folder for complete working examples.
 
 ## Documentation
 
