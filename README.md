@@ -8,7 +8,7 @@
 
 **GeothermalWells.jl** is a Julia package for simulating Deep Borehole Heat Exchanger (DBHE) Arrays.
 
-> **Note:** This package is currently under development.
+> **Note:** This package is currently under active development and there may be breaking changes.
 
 ## Installation
 
