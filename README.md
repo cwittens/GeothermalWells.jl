@@ -43,7 +43,8 @@ T0 = initial_condition_thermal_gradient(backend, Float64, gridx, gridy, gridz;
 cache = create_cache(backend=CPU(), gridx=gridx, gridy=gridy, gridz=gridz,
     materials=materials, boreholes=(borehole,), inlet_model=ConstantInlet{Float64}(20.0))
 prob = ODEProblem(rhs_diffusion_z!, T0, (0.0, 3600.0), cache)
-solve(prob, ROCK2(), dt=60.0)
+callback, saved_values = get_simulation_callback(...)
+solve(prob, ROCK2(), dt=60.0, callback=callback)
 ```
 
 See the [examples/](examples/) folder for complete working examples.
@@ -52,11 +53,19 @@ See the [examples/](examples/) folder for complete working examples.
 
 For more details, see the [documentation](https://cwittens.github.io/GeothermalWells.jl/stable/).
 
-## Citing
+If you use [GeothermalWells.jl](https://github.com/cwittens/GeothermalWells.jl) in your research, please cite it:
 
-If you use GeothermalWells.jl in your research, please cite it. See [CITATION.cff](CITATION.cff) for citation information.
+```bibtex
+@software{wittenstein2026geothermalwells,
+  title={{GeothermalWells.jl}: {GPU}-accelerated simulation of deep borehole heat exchanger (DBHE) arrays},
+  author={Wittenstein, Collin},
+  year={2026},
+  howpublished={\url{https://github.com/cwittens/GeothermalWells.jl}},
+  doi = {10.5281/zenodo.YYYYYYY}
+}
+```
 
-TODO: BibTeX when Zenodo is ready.
+TODO Zenodo.
 
 ## Authors
 

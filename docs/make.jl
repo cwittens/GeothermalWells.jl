@@ -11,10 +11,16 @@ makedocs(;
         canonical="https://cwittens.github.io/GeothermalWells.jl",
         edit_link="main",
         assets=String[],
+        prettyurls=get(ENV, "CI", "false") == "true",
     ),
     pages=[
         "Home" => "index.md",
+        "Methodology" => "methodology.md",
+        "Getting Started" => "getting_started.md",
+        "API Reference" => "reference.md",
+        "License" => "license.md",
     ],
+    warnonly=[:missing_docs],  # Don't fail on undocumented internal functions
 )
 
 deploydocs(;

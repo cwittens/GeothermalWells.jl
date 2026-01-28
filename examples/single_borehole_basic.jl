@@ -83,8 +83,9 @@ println("Grid size: $(length(gridx)) x $(length(gridy)) x $(length(gridz))")
 # Linear thermal gradient: T(z) = T_surface + gradient * z
 T0 = initial_condition_thermal_gradient(
     backend, Float_used, gridx, gridy, gridz;
-    T_surface=2.29,    # surface temperature [°C]
-    gradient=0.35     # thermal gradient [K/m] (10x higher than typical to speed up testing on CPU)
+    T_surface=2.29,   # surface temperature [°C]
+    gradient=0.35     # thermal gradient [K/m] (10x higher than typical to speed 
+                      # up testing on CPU, by needing smaller zmax)
 );
 
 
@@ -117,10 +118,9 @@ prob = ODEProblem(rhs_diffusion_z!, T0, tspan, cache)
 # Save solution at regular intervals
 n_saves = 11  # save initial + 10 more times
 saveat = range(tspan..., n_saves)
-callback, saved_values = get_callback(
+callback, saved_values = get_simulation_callback(
     saveat=saveat,
-    print_every_n=1,
-    write_to_jld=false
+    print_every_n=1
 )
 
 # Time step and solver
