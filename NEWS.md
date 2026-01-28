@@ -4,6 +4,8 @@ GeothermalWells.jl follows [semantic versioning](https://semver.org/).
 
 ## Unreleased
 
+- Added validation error when `write_to_jld=true` but `data_folder_dir` is empty
+
 ## v0.1.2
 
 ### Added

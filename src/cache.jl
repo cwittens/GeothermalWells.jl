@@ -222,6 +222,11 @@ T_final = saved_values.saveval[end]
 ```
 """
 function get_simulation_callback(; saveat, print_every_n=1000, write_to_jld=false, data_folder_dir="")
+
+        if write_to_jld && isempty(data_folder_dir)
+        error("When `write_to_jld` is true, `data_folder_dir` must be provided and cannot be an empty string")
+    end
+    
     save_cb, print_cb, saved_values = save_and_print_callback(saveat; print_every_n=print_every_n, write_to_jld=write_to_jld, data_folder_dir=data_folder_dir)
 
     ADI_and_ADV = DiscreteCallback((u, t, integrator) -> true, ADI_and_ADV_callback!, save_positions=(false, false))

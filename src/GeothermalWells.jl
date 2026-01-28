@@ -29,17 +29,13 @@ export AbstractMaterialProperties,
     initial_condition_thermal_gradient
 
 # Exports from cache.jl
-export create_cache,
-    get_simulation_callback
+export create_cache, get_simulation_callback
 
 # Exports from grids.jl
-export compute_domain,
-    create_uniform_gridz_with_borehole_depths,
-    create_adaptive_grid_1d
+export compute_domain, create_uniform_gridz_with_borehole_depths, create_adaptive_grid_1d
 
 # Exports from solver.jl
-export rhs_diffusion_z!,
-    eigen_estimator
+export rhs_diffusion_z!, eigen_estimator
 
 # Exports from util.jl
 export pkg_dir,
