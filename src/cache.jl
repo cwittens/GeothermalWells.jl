@@ -139,11 +139,11 @@ function save_and_print_callback(saveat; print_every_n=1000, write_to_jld=false,
 
     function print_affect!(integrator)
         if integrator.t > 3600 * 24 * 365
-            println("Step $(integrator.stats.naccept), t = $(integrator.t)s, or $(round((integrator.t / 31536000), digits=4)) years")
+            println("Step $(integrator.stats.naccept), t = $(integrator.t) s, or $(round((integrator.t / 31536000), digits=4)) years")
         elseif integrator.t > 3600 * 24
-            println("Step $(integrator.stats.naccept), t = $(integrator.t)s, or $(round((integrator.t / 86400), digits=2)) days")
+            println("Step $(integrator.stats.naccept), t = $(integrator.t) s, or $(round((integrator.t / 86400), digits=2)) days")
         else integrator.t > 3600
-            println("Step $(integrator.stats.naccept), t = $(integrator.t)s, or $(round((integrator.t / 3600), digits=2)) hours")
+            println("Step $(integrator.stats.naccept), t = $(integrator.t) s, or $(round((integrator.t / 3600), digits=2)) hours")
         end
         flush(stdout)
     end
