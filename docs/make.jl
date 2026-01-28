@@ -11,9 +11,9 @@ end
 DocMeta.setdocmeta!(GeothermalWells, :DocTestSetup, :(using GeothermalWells); recursive=true)
 
 # Create changelog
-Changelog.generate(Changelog.Documenter(),
-                    joinpath(@__DIR__, "..", "NEWS.md"),
-                    joinpath(@__DIR__, "src", "changelog.md");
+Changelog.generate(Changelog.Documenter(),                           # output type
+                   joinpath(@__DIR__, "..", "NEWS.md"),              # input file
+                   joinpath(@__DIR__, "src", "changelog_tmp.md");    # output file
                     repo = "cwittens/GeothermalWells.jl",
                     branch = "main")
 # Fix edit URL of changelog
