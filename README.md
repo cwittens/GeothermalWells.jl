@@ -2,6 +2,7 @@
 
 [![Docs-stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://cwittens.github.io/GeothermalWells.jl/stable/)
 [![Docs-dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://cwittens.github.io/GeothermalWells.jl/dev/)
+[![Julia](https://img.shields.io/badge/Julia-1.12+-purple.svg)](https://julialang.org)
 [![Build Status](https://github.com/cwittens/GeothermalWells.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/cwittens/GeothermalWells.jl/actions/workflows/CI.yml?query=branch%3Amain)
 [![Coverage](https://codecov.io/gh/cwittens/GeothermalWells.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/cwittens/GeothermalWells.jl)
 [![License: MIT](https://img.shields.io/badge/License-MIT-success.svg)](https://opensource.org/licenses/MIT)
