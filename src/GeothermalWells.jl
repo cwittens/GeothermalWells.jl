@@ -30,7 +30,7 @@ export AbstractMaterialProperties,
 
 # Exports from cache.jl
 export create_cache,
-    get_callback
+    get_simulation_callback
 
 # Exports from grids.jl
 export compute_domain,

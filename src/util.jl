@@ -121,9 +121,27 @@ function data_li(i)
     return x_data, T_data
 end
 
-# TODO: some plotting functions
+"""
+    plot_grid(gridx, gridy; boreholes=nothing, xlims=nothing, ylims=nothing, ...)
 
+Visualize the computational grid in the x-y plane.
 
+Plots grid lines and optionally overlays borehole geometry (inner pipe, outer pipe,
+backfill boundaries). Useful for verifying grid resolution near boreholes.
+
+# Arguments
+- `gridx`: Grid coordinates in x-direction
+- `gridy`: Grid coordinates in y-direction
+- `boreholes=nothing`: Tuple of `Borehole` objects to overlay
+- `xlims=nothing`: x-axis limits (auto-determined if not provided)
+- `ylims=nothing`: y-axis limits (auto-determined if not provided)
+- `size=(800, 800)`: Figure size in pixels
+- `annotate=true`: Add text labels to borehole components
+- `legend=:bottomleft`: Legend position
+
+# Returns
+A Plots.jl plot object.
+"""
 function plot_grid(gridx, gridy;
     boreholes=nothing,
     xlims=nothing, ylims=nothing,

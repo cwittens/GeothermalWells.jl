@@ -130,18 +130,21 @@ Returns `(save_cb, print_cb, saved_values)` for use with ODE solver.
 Optionally writes checkpoints to JLD2 files if `write_to_jld=true`.
 """
 function save_and_print_callback(saveat; print_every_n=1000, write_to_jld=false, data_folder_dir="", Float_used_to_save=Float32)
-    # reset counter
-    step_counter = Ref(0)
-    # Callback that increments counter and prints every 100 steps
+
     function print_condition_open(u, t, integrator, print_every_n)
-        step_counter[] += 1
-        return step_counter[] % print_every_n == 0
+        return integrator.stats.naccept % print_every_n == 0
     end
 
     print_condition(u, t, integrator) = print_condition_open(u, t, integrator, print_every_n)
 
     function print_affect!(integrator)
-        println("Step $(step_counter[]), t = $(integrator.t), years = $(round((integrator.t / 31536000), digits=4))")
+        if integrator.t > 3600 * 24 * 365
+            println("Step $(integrator.stats.naccept), t = $(integrator.t)s, or $(round((integrator.t / 31536000), digits=4)) years")
+        elseif integrator.t > 3600 * 24
+            println("Step $(integrator.stats.naccept), t = $(integrator.t)s, or $(round((integrator.t / 86400), digits=2)) days")
+        else integrator.t > 3600
+            println("Step $(integrator.stats.naccept), t = $(integrator.t)s, or $(round((integrator.t / 3600), digits=2)) hours")
+        end
         flush(stdout)
     end
 
@@ -182,14 +185,43 @@ end
 
 
 """
-    get_callback(; saveat, print_every_n=1000, write_to_jld=false, data_folder_dir="")
+    get_simulation_callback(; saveat, print_every_n=1000, write_to_jld=false, data_folder_dir="")
 
-Create combined callback set for simulation.
+Create the required callback set for the simulation.
 
-Includes ADI+advection callback, progress printing, and solution saving.
-Returns `(callback, saved_values)`.
+!!! warning "Required"
+    This callback is essential for the simulation. It performs the ADI (Alternating Direction
+    Implicit) method for horizontal diffusion and the semi-Lagrangian advection. Without this
+    callback, only vertical diffusion (handled by ROCK2) is computed.
+
+The callback combines three components:
+1. **ADI + Advection**: Horizontal diffusion and fluid advection (runs every timestep)
+2. **Progress printing**: Prints simulation progress every `print_every_n` steps
+3. **Solution saving**: Saves temperature field at times specified by `saveat`
+
+# Arguments
+- `saveat`: Times at which to save the solution (e.g., `range(0, 3600, 10)` or `[0.0, 3600.0]`)
+- `print_every_n=1000`: Print progress every N accepted timesteps
+- `write_to_jld=false`: If `true`, also write checkpoints to JLD2 files
+- `data_folder_dir=""`: Directory for JLD2 checkpoint files (required if `write_to_jld=true`)
+
+# Returns
+- `callback`: Combined `CallbackSet` to pass to `solve(..., callback=callback)`
+- `saved_values`: `SavedValues` object containing saved solutions accessible via `saved_values.saveval`
+
+# Example
+```julia
+callback, saved_values = get_simulation_callback(
+    saveat=[0.0, 3600.0, 7200.0],
+    print_every_n=100
+)
+solve(prob, ROCK2(eigen_est=eigen_estimator), callback=callback, dt=80.0, adaptive=false)
+
+# Access saved solutions
+T_final = saved_values.saveval[end]
+```
 """
-function get_callback(; saveat, print_every_n=1000, write_to_jld=false, data_folder_dir="")
+function get_simulation_callback(; saveat, print_every_n=1000, write_to_jld=false, data_folder_dir="")
     save_cb, print_cb, saved_values = save_and_print_callback(saveat; print_every_n=print_every_n, write_to_jld=write_to_jld, data_folder_dir=data_folder_dir)
 
     ADI_and_ADV = DiscreteCallback((u, t, integrator) -> true, ADI_and_ADV_callback!, save_positions=(false, false))
