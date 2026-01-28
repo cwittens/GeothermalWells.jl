@@ -62,11 +62,9 @@ If you use [GeothermalWells.jl](https://github.com/cwittens/GeothermalWells.jl) 
   author={Wittenstein, Collin},
   year={2026},
   howpublished={\url{https://github.com/cwittens/GeothermalWells.jl}},
-  doi = {10.5281/zenodo.YYYYYYY}
+  doi = {10.5281/zenodo.18405325}
 }
 ```
-
-TODO Zenodo.
 
 ## Authors
 

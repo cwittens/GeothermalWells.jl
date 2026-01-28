@@ -2,13 +2,13 @@ cff-version: 1.2.0
 title: GeothermalWells.jl
 message: 'If you use this software, please cite it as below.'
 type: software
-doi: 10.5281/zenodo.xxxxxxx
+doi: 10.5281/zenodo.18405325
 authors:
   - family-names: Wittenstein
     given-names: Collin
     orcid: 'https://orcid.org/0009-0006-8591-278X'
 identifiers:
   - type: doi
-    value: 10.5281/zenodo.xxxxxxx
+    value: 10.5281/zenodo.18405325
 repository-code: 'https://github.com/cwittens/GeothermalWells.jl'
 license: MIT
