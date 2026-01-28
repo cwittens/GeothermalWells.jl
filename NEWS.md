@@ -4,10 +4,10 @@ GeothermalWells.jl follows [semantic versioning](https://semver.org/).
 
 ## Changes in v0.1.1
 
-Released as [official Julia package](https://github.com/JuliaRegistries/General/pull/146869)
-
-#### Fixed
-- Bug with `print_every_n` parameter in callback
+- renamed `get_callback` to `get_simulation_callback` to make clear its needed and not optional ([#4]).
+- added Documentation ([#4]). 
+- Released as [official Julia package](https://github.com/JuliaRegistries/General/pull/146869)
+- Bug fix with `print_every_n` parameter in callback
 
 ## v0.1.0
 
