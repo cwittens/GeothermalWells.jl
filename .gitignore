@@ -5,3 +5,4 @@
 /docs/build/
 **/Manifest*.toml
 settings.local.json
+docs/src/changelog.md
