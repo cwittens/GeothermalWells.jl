@@ -1,6 +1,6 @@
 name = "GeothermalWells"
 uuid = "9e50befb-bb92-4f5a-8f9f-381c571c0866"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Collin Wittenstein <collin.wittenstein@gmail.com>"]
 
 [deps]
