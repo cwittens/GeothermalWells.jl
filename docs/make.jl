@@ -33,7 +33,7 @@ makedocs(;
     format=Documenter.HTML(;
         canonical="https://cwittens.github.io/GeothermalWells.jl",
         edit_link="main",
-        assets=String[],
+        assets=String["assets/favicon.ico"],
         prettyurls=get(ENV, "CI", "false") == "true",
     ),
     pages=[

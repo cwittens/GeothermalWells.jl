@@ -1,5 +1,11 @@
 # GeothermalWells.jl
 
+```@raw html
+<p align="center">
+  <img height="200px" alt="logo" src="https://github.com/user-attachments/assets/edcd6ae9-1c7b-4f31-ba00-33b1812530fb">
+</p>
+```
+
 [![Docs-stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://cwittens.github.io/GeothermalWells.jl/stable/)
 [![Docs-dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://cwittens.github.io/GeothermalWells.jl/dev/)
 [![Julia](https://img.shields.io/badge/Julia-1.12+-purple.svg)](https://julialang.org)

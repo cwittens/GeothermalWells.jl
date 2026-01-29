@@ -7,7 +7,9 @@
 [![Coverage](https://codecov.io/gh/cwittens/GeothermalWells.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/cwittens/GeothermalWells.jl)
 [![License: MIT](https://img.shields.io/badge/License-MIT-success.svg)](https://opensource.org/licenses/MIT)
 
-![geothermalwells_banner](https://github.com/user-attachments/assets/edcd6ae9-1c7b-4f31-ba00-33b1812530fb)
+<p align="center">
+  <img height="200px" alt="geothermalwells_banner" src="https://github.com/user-attachments/assets/edcd6ae9-1c7b-4f31-ba00-33b1812530fb">
+</p>
 
 **GeothermalWells.jl** is a Julia package for simulating deep borehole heat exchangers (DBHEs), supporting both single wells and well arrays. The package is designed to be easy to use, enabling rapid prototyping and well design exploration, while providing GPU-accelerated performance for long-term simulations.
 
