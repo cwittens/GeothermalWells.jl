@@ -4,6 +4,8 @@ GeothermalWells.jl follows [semantic versioning](https://semver.org/).
 
 ## Unreleased
 
+## v0.1.3
+
 ### Added
 - Logo and favicon to documentation
 
