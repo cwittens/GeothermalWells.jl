@@ -2,7 +2,7 @@
 
 ```@raw html
 <p align="center">
-  <img height="200px" alt="logo" src="https://github.com/user-attachments/assets/edcd6ae9-1c7b-4f31-ba00-33b1812530fb">
+  <img height="200px" alt="logo" src="assets/geothermalwells_banner.svg">
 </p>
 ```
 
