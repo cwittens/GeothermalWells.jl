@@ -50,4 +50,5 @@ makedocs(;
 deploydocs(;
     repo="github.com/cwittens/GeothermalWells.jl",
     devbranch="main",
+    push_preview=true,
 )
