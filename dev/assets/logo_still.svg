@@ -1,26 +1,4 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 11.6 350 326.8" width="350" height="326.8">
-  <style>
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.65; }
-    }
-    
-    .fluid-flow {
-      animation: pulse 4s ease-in-out infinite;
-    }
-    
-    @keyframes flip {
-      0%, 97% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-    
-    .logo-container {
-      transform-origin: 175px 200px;
-      animation: flip 30s ease-in-out infinite;
-    }
-  </style>
-
-  <g class="logo-container">
   <!-- Connecting lines (behind the dots) -->
   <line x1="175" y1="100" x2="88.398438" y2="250" stroke="#666" stroke-width="3" stroke-linecap="round"/>
   <line x1="175" y1="100" x2="261.601562" y2="250" stroke="#666" stroke-width="3" stroke-linecap="round"/>
@@ -29,22 +7,21 @@
   <!-- Green well (TOP) -->
   <circle cx="175" cy="100" r="75" fill="#222"/>
   <circle cx="175" cy="100" r="73" fill="#389826"/>
-  <circle class="fluid-flow" cx="175" cy="100" r="62" fill="#2D7A5A"/>
+  <circle cx="175" cy="100" r="62" fill="#2D7A5A"/>
   <circle cx="175" cy="100" r="38" fill="#389826"/>
-  <circle class="fluid-flow" cx="175" cy="100" r="25" fill="#6BC22F"/>
+  <circle cx="175" cy="100" r="25" fill="#6BC22F"/>
   
   <!-- Red well (BOTTOM LEFT) -->
   <circle cx="88.398438" cy="250" r="75" fill="#222"/>
   <circle cx="88.398438" cy="250" r="73" fill="#CB3C33"/>
-  <circle class="fluid-flow" cx="88.398438" cy="250" r="62" fill="#8B2525"/>
+  <circle cx="88.398438" cy="250" r="62" fill="#8B2525"/>
   <circle cx="88.398438" cy="250" r="38" fill="#CB3C33"/>
-  <circle class="fluid-flow" cx="88.398438" cy="250" r="25" fill="#F05A2A"/>
+  <circle cx="88.398438" cy="250" r="25" fill="#F05A2A"/>
   
   <!-- Purple well (BOTTOM RIGHT) -->
   <circle cx="261.601562" cy="250" r="75" fill="#222"/>
   <circle cx="261.601562" cy="250" r="73" fill="#9558B2"/>
-  <circle class="fluid-flow" cx="261.601562" cy="250" r="62" fill="#5E4085"/>
+  <circle cx="261.601562" cy="250" r="62" fill="#5E4085"/>
   <circle cx="261.601562" cy="250" r="38" fill="#9558B2"/>
-  <circle class="fluid-flow" cx="261.601562" cy="250" r="25" fill="#B85FC5"/>
-  </g>
+  <circle cx="261.601562" cy="250" r="25" fill="#B85FC5"/>
 </svg>
