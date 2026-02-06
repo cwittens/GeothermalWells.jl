@@ -58,7 +58,7 @@ See the [examples/](examples/) folder for complete working examples.
 
 For more details, see the [documentation](https://cwittens.github.io/GeothermalWells.jl/stable/).
 
-If you use [GeothermalWells.jl](https://github.com/cwittens/GeothermalWells.jl) in your research, please cite it:
+If you use [GeothermalWells.jl](https://github.com/cwittens/GeothermalWells.jl) in your research, please cite the software and the accompanying paper:
 
 ```bibtex
 @software{wittenstein2026geothermalwells,
@@ -67,6 +67,18 @@ If you use [GeothermalWells.jl](https://github.com/cwittens/GeothermalWells.jl) 
   year={2026},
   howpublished={\url{https://github.com/cwittens/GeothermalWells.jl}},
   doi = {10.5281/zenodo.18405325}
+}
+```
+
+```bibtex
+@inproceedings{wittenstein2026dbhe,
+  title={A Full Three-Dimensional {GPU}-Accelerated Model for Deep Borehole Heat Exchangers ({DBHEs}) Enabling Simulation of Well Arrays},
+  author={Wittenstein, Collin and Lujan, Emmanuel and Inglis, Andrew and Metcalfe, Robert and Edelman, Alan and Ranocha, Hendrik},
+  booktitle={Proceedings, 51st Workshop on Geothermal Reservoir Engineering},
+  year={2026},
+  organization={Stanford University},
+  address={Stanford, CA},
+  url={https://pangea.stanford.edu/ERE/db/GeoConf/papers/SGW/2026/Wittenstein.pdf}
 }
 ```
 
