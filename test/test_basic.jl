@@ -67,6 +67,30 @@ end
     @test materials.k_rock_layers[1] == 1.8
     @test materials.k_rock_layers[4] == 5.3
     @test materials.layer_depths[2] == 1000.0
+
+    # get_rock_thermal_conductivity_by_depth — picks correct layer
+    @test GeothermalWells.get_rock_thermal_conductivity_by_depth(100.0, materials) == 1.8   # layer 1 (z ≤ 500)
+    @test GeothermalWells.get_rock_thermal_conductivity_by_depth(500.0, materials) == 1.8   # boundary of layer 1
+    @test GeothermalWells.get_rock_thermal_conductivity_by_depth(750.0, materials) == 2.6   # layer 2 (500 < z ≤ 1000)
+    @test GeothermalWells.get_rock_thermal_conductivity_by_depth(1250.0, materials) == 3.5  # layer 3
+    @test GeothermalWells.get_rock_thermal_conductivity_by_depth(1750.0, materials) == 5.3  # layer 4
+    @test GeothermalWells.get_rock_thermal_conductivity_by_depth(3000.0, materials) == 5.3  # below all layers → deepest
+
+    # get_rock_volumetric_heat_capacity_by_depth — picks correct layer
+    @test GeothermalWells.get_rock_volumetric_heat_capacity_by_depth(100.0, materials) == 1780 * 1379.0
+    @test GeothermalWells.get_rock_volumetric_heat_capacity_by_depth(750.0, materials) == 2030 * 1450.0
+    @test GeothermalWells.get_rock_volumetric_heat_capacity_by_depth(1250.0, materials) == 1510 * 1300.0
+    @test GeothermalWells.get_rock_volumetric_heat_capacity_by_depth(1750.0, materials) == 2600 * 878.0
+    @test GeothermalWells.get_rock_volumetric_heat_capacity_by_depth(3000.0, materials) == 2600 * 878.0
+
+    # eigen_estimator_get_dmax — max diffusivity across all materials
+    d_max = GeothermalWells.eigen_estimator_get_dmax(materials)
+    d_rock_layers = [materials.k_rock_layers[i] / materials.rho_c_rock_layers[i] for i in 1:4]
+    d_water = materials.k_water / materials.rho_c_water
+    d_steel = materials.k_steel / materials.rho_c_steel
+    d_insulating = materials.k_insulating / materials.rho_c_insulating
+    d_backfill = materials.k_backfill / materials.rho_c_backfill
+    @test d_max ≈ max(maximum(d_rock_layers), d_water, d_steel, d_insulating, d_backfill)
 end
 
 @testitem "Grid creation" begin
@@ -103,6 +127,70 @@ end
     @test gridx[1] == -100
     @test gridx[end] == 100
     @test minimum(diff(gridx)) <= 0.0025
+end
+
+@testitem "Adaptive grid 1D - multiple boreholes" begin
+    using GeothermalWells
+    using KernelAbstractions: CPU
+
+    # Two boreholes separated by 30m in x
+    bh1 = Borehole{Float64}(-15.0, 0.0, 2000.0, 0.0511, 0.0114, 0.0885, 0.00833, 0.115, 11.65, 0.0)
+    bh2 = Borehole{Float64}(15.0, 0.0, 2000.0, 0.0511, 0.0114, 0.0885, 0.00833, 0.115, 11.65, 0.0)
+    boreholes = (bh1, bh2)
+
+    gridx = create_adaptive_grid_1d(
+        xmin=-100, xmax=100,
+        dx_fine=0.0025, growth_factor=1.3, dx_max=10.0,
+        boreholes=boreholes, backend=CPU(), Float_used=Float64, direction=:x
+    )
+
+    @test gridx[1] == -100.0
+    @test gridx[end] == 100.0
+    @test issorted(gridx)
+    @test length(unique(gridx)) == length(gridx)  # no duplicates
+
+    # Fine spacing near both boreholes
+    near_bh1 = filter(x -> abs(x - bh1.xc) < bh1.r_backfill, gridx)
+    near_bh2 = filter(x -> abs(x - bh2.xc) < bh2.r_backfill, gridx)
+    @test length(near_bh1) > 0
+    @test length(near_bh2) > 0
+
+    # The gap between boreholes should have grid points
+    between = filter(x -> bh1.xc + bh1.r_backfill < x < bh2.xc - bh2.r_backfill, gridx)
+    @test length(between) > 0
+
+    # Also test y-direction with the same boreholes offset in y
+    bh3 = Borehole{Float64}(0.0, -15.0, 2000.0, 0.0511, 0.0114, 0.0885, 0.00833, 0.115, 11.65, 0.0)
+    bh4 = Borehole{Float64}(0.0, 15.0, 2000.0, 0.0511, 0.0114, 0.0885, 0.00833, 0.115, 11.65, 0.0)
+
+    gridy = create_adaptive_grid_1d(
+        xmin=-100, xmax=100,
+        dx_fine=0.0025, growth_factor=1.3, dx_max=10.0,
+        boreholes=(bh3, bh4), backend=CPU(), Float_used=Float64, direction=:y
+    )
+
+    @test gridy[1] == -100.0
+    @test gridy[end] == 100.0
+    @test issorted(gridy)
+end
+
+@testitem "Uniform z-grid - multiple boreholes with different depths" begin
+    using GeothermalWells
+    using KernelAbstractions: CPU
+
+    bh1 = Borehole{Float64}(-15.0, 0.0, 1500.0, 0.0511, 0.0114, 0.0885, 0.00833, 0.115, 11.65, 0.0)
+    bh2 = Borehole{Float64}(15.0, 0.0, 2000.0, 0.0511, 0.0114, 0.0885, 0.00833, 0.115, 11.65, 0.0)
+
+    gridz = create_uniform_gridz_with_borehole_depths(
+        zmin=0, zmax=2500, dz=100,
+        boreholes=(bh1, bh2), backend=CPU()
+    )
+
+    @test gridz[1] == 0.0
+    @test bh1.h ∈ gridz  # 1500.0 included
+    @test bh2.h ∈ gridz  # 2000.0 included
+    @test issorted(gridz)
+    @test length(unique(gridz)) == length(gridz)
 end
 
 @testitem "Initial condition - thermal gradient" begin
