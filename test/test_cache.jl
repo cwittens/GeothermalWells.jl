@@ -12,7 +12,7 @@ end
 
 @testitem "save_and_print_callback with write_to_jld=true" begin
     using GeothermalWells
-    using DiffEqCallbacks: SavingCallback
+    using DiffEqCallbacks
     using DiffEqBase: DiscreteCallback
 
     tmpdir = mktempdir()
@@ -35,6 +35,7 @@ end
 
 @testitem "save_and_print_callback with write_to_jld=false" begin
     using GeothermalWells
+    using DiffEqCallbacks
     using DiffEqBase: DiscreteCallback
 
     save_cb, print_cb, saved_values = GeothermalWells.save_and_print_callback(
