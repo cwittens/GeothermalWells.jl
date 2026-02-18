@@ -76,6 +76,7 @@ If you use [GeothermalWells.jl](https://github.com/cwittens/GeothermalWells.jl) 
   author={Wittenstein, Collin and Lujan, Emmanuel and Inglis, Andrew and Metcalfe, Robert and Edelman, Alan and Ranocha, Hendrik},
   booktitle={Proceedings, 51st Workshop on Geothermal Reservoir Engineering},
   year={2026},
+  month={02},
   organization={Stanford University},
   address={Stanford, CA},
   url={https://pangea.stanford.edu/ERE/db/GeoConf/papers/SGW/2026/Wittenstein.pdf}
