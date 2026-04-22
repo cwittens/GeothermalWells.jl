@@ -395,24 +395,60 @@ end
     ϕ[k, j, i] = u_tmp[ij_xy, k]
 end
 
-# TODO: better splitting like (Δt/2 ADI+ADV) + (Δt ROCK z) + (Δt/2 ADI+ADV)??
+
 """
     ADI_and_ADV_callback!(integrator)
 
-Alternating Direction Implicit (ADI) callback for horizontal (x,y) diffusion combined with advection.
+Callback implementing the ADI + advection operator as part of a Strang splitting scheme.
 
-This callback implements operator splitting for the horizontal diffusion using the
-ADI scheme, interleaved with semi-Lagrangian advection. Each full timestep `Δt` is split into 
-two half-steps with alternating implicit directions:
+The overall time integration uses Strang splitting between two operators:
+- **Operator A**: Horizontal (x,y) diffusion via ADI + semi-Lagrangian advection (this callback)
+- **Operator B**: Vertical (z) diffusion via ROCK2 (the ODE right-hand side `rhs_diffusion_z!`)
 
-**First half-step (Δt/2):**
+Each ROCK2 step advances by `Δt`. After each step, this callback applies operator A
+by calling [`ADI_and_ADV_step!`](@ref) twice, each with `Δt/2`. This produces the
+merged interior of the Strang splitting:
+
+```
+A(Δt/2) B(Δt) [A(Δt/2) A(Δt/2)] B(Δt) [A(Δt/2) A(Δt/2)] B(Δt) A(Δt/2)
+                \\______  ______/         \\______  ______/
+                       \\/                        \\/
+                    A(Δt/2) x2 per callback = effectively A(Δt)
+```
+
+The first and last half-steps of the true Strang splitting are omitted, which introduces
+a one-time first-order error that should be negligible over millions of time steps.
+
+"""
+function ADI_and_ADV_callback!(integrator)
+
+    t = integrator.t
+    Δt_half = (integrator.t - integrator.tprev) / 2
+
+    ADI_and_ADV_step!(integrator, t, Δt_half)
+    ADI_and_ADV_step!(integrator, t + Δt_half, Δt_half)
+
+    return nothing
+end
+
+
+"""
+    ADI_and_ADV_step!(integrator, t, Δt)
+
+Perform one ADI + advection sub-step of size `Δt` starting at time `t`.
+
+This executes the standard Peaceman-Rachford ADI scheme for horizontal diffusion,
+interleaved with semi-Lagrangian advection. The sub-step `Δt` is itself split into
+two ADI half-steps with alternating implicit directions:
+
+**First half-step (`Δt/2`):**
 1. Explicit y-diffusion: `temp = (I + Δt/2 · Aᵧ) · ϕ`
-2. Advection applied to `temp`
+2. Semi-Lagrangian advection applied to `temp`
 3. Implicit x-solve: `(I - Δt/2 · Aₓ) · ϕ = temp`
 
-**Second half-step (Δt/2):**
+**Second half-step (`Δt/2`):**
 1. Explicit x-diffusion: `temp = (I + Δt/2 · Aₓ) · ϕ`
-2. Advection applied to `temp`
+2. Semi-Lagrangian advection applied to `temp`
 3. Implicit y-solve: `(I - Δt/2 · Aᵧ) · ϕ = temp`
 
 The advection is placed after the explicit diffusion step and before the implicit Thomas solve. 
@@ -427,10 +463,15 @@ than the smallest `Δx` and `Δy` (due to the fine grid resolution needed near t
 explicit stabilized method (ROCK2) is sufficient for the z-direction without imposing 
 prohibitive time step restrictions.
 
-The implicit x/y solves use the Thomas algorithm for the resulting tridiagonal systems.
+The implicit solves use the Thomas algorithm for the resulting tridiagonal systems.
+
+# Arguments
+- `integrator`: OrdinaryDiffEq integrator (provides `u`, `uprev` as working arrays, and `p` as the cache)
+- `t`: Current physical time [s] at the start of this sub-step
+- `Δt`: Sub-step size [s]
 """
-function ADI_and_ADV_callback!(integrator)
-    Δt = integrator.t - integrator.tprev
+function ADI_and_ADV_step!(integrator, t, Δt)
+
     ϕ = integrator.u
     temp = integrator.uprev
 
@@ -444,7 +485,7 @@ function ADI_and_ADV_callback!(integrator)
     diffusion_1D!(backend)(temp, ϕ, gridx, gridy, gridz, boreholes, materials, Δt / 2, Val_in_y, ValTrue, ndrange=(Nz, Ny, Nx))
 
     # Advection for dt/2
-    advection!(temp, Δt / 2, integrator.t, integrator.p, boreholes)
+    advection!(temp, Δt / 2, t, integrator.p, boreholes)
 
     # X direction implicit (I - 0.5dt *  A_x) \ temp
     thomas_I_minus_A!(backend)(ϕ, temp, gridx, gridy, gridz, Δt / 2, boreholes, materials, ValNx, Val_in_x, ndrange=(Nz, Ny))
@@ -455,7 +496,7 @@ function ADI_and_ADV_callback!(integrator)
     diffusion_1D!(backend)(temp, ϕ, gridx, gridy, gridz, boreholes, materials, Δt / 2, Val_in_x, ValTrue, ndrange=(Nz, Ny, Nx))
 
     # Advection for dt/2
-    advection!(temp, Δt / 2, integrator.t + Δt / 2, integrator.p, boreholes)
+    advection!(temp, Δt / 2, t + Δt / 2, integrator.p, boreholes)
 
     # Y direction implicit (I - 0.5dt *  A_y) \ temp
     thomas_I_minus_A!(backend)(ϕ, temp, gridx, gridy, gridz, Δt / 2, boreholes, materials, ValNy, Val_in_y, ndrange=(Nz, Nx))
