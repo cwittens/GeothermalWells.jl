@@ -25,6 +25,13 @@ function create_advection_index_lists(backend, gridx, gridy, gridz, boreholes)
         end
     end
 
+    # number of outer cells in each borehole
+    count_outer_per_bh = zeros(CPU(), Int, length(boreholes))
+    for (_, _, bh_idx) in Idx_list_Outer
+        count_outer_per_bh[bh_idx] += 1
+    end
+    count_outer_per_bh = adapt(backend, count_outer_per_bh)
+
     countxy_inner = length(Idx_list_Inner)
     countxy_outer = length(Idx_list_Outer)
     Idx_list = vcat(Idx_list_Inner, Idx_list_Outer)
@@ -40,7 +47,7 @@ function create_advection_index_lists(backend, gridx, gridy, gridz, boreholes)
 
     u_tmp = zeros(backend, eltype(gridx), countxy_inner + countxy_outer, countz)
 
-    return (Idx_list_Inner, Idx_list_Outer, Idx_list, countxy_inner, countxy_outer, countz, u_tmp)
+    return (Idx_list_Inner, Idx_list_Outer, Idx_list, count_outer_per_bh, countxy_inner, countxy_outer, countz, u_tmp)
 end
 
 
@@ -57,10 +64,12 @@ function create_cache(; backend, gridx, gridy, gridz, materials, boreholes, inle
     Nx, Ny, Nz = length(gridx), length(gridy), length(gridz)
     N_bh = length(boreholes)
 
-    Idx_list_Inner, Idx_list_Outer, Idx_list, countxy_inner, countxy_outer, countz, u_tmp = create_advection_index_lists(backend, gridx, gridy, gridz, boreholes)
+    Idx_list_Inner, Idx_list_Outer, Idx_list, count_outer_per_bh, countxy_inner, countxy_outer, countz, u_tmp = create_advection_index_lists(backend, gridx, gridy, gridz, boreholes)
 
     T_outlet = zeros(backend, eltype(gridx), N_bh)
     T_outlet_counter = zeros(backend, Int, N_bh)
+
+    T_turnaround_mean = zeros(backend, eltype(gridx), countz, N_bh)
 
     eigen_estimate = eigen_estimator_pre_calculation(gridz, materials)
 
@@ -94,10 +103,12 @@ function create_cache(; backend, gridx, gridy, gridz, materials, boreholes, inle
         inlet_model,
         T_outlet,
         T_outlet_counter,
+        T_turnaround_mean,
         u_tmp,
         Idx_list_Inner,
         Idx_list_Outer,
         Idx_list,
+        count_outer_per_bh,
         countxy_inner,
         countxy_outer,
         countz,

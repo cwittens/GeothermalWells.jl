@@ -4,6 +4,11 @@ GeothermalWells.jl follows [semantic versioning](https://semver.org/).
 
 ## Unreleased
 
+### Changed
+- Operator splitting changed from Lie splitting to Strang splitting for improved accuracy
+- Advection now precomputes turnaround mean temperature, improving efficiency for well array simulations
+- Improved documentation on methodology
+
 ## v0.1.3
 
 ### Added
