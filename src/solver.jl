@@ -248,19 +248,35 @@ At the turnaround point at the bottom of the borehole (depth `h`), where water t
 from the inner pipe to the outer annulus, perfect mixing of temperature is assumed.
 """
 @inline function advection!(ϕ, dt, t, cache, boreholes)
-    (; u_tmp, Idx_list, Idx_list_Inner, Idx_list_Outer, countxy_inner, countxy_outer, countz, gridx, gridy, gridz, backend, inlet_model, T_outlet, T_outlet_counter) = cache
+    (; u_tmp, Idx_list, Idx_list_Inner, Idx_list_Outer, count_outer_per_bh, countxy_inner, countxy_outer, countz, gridx, gridy, gridz, backend, inlet_model, T_outlet, T_outlet_counter, T_turnaround_mean) = cache
 
     fill!(T_outlet, 0)
     fill!(T_outlet_counter, 0)
+    fill!(T_turnaround_mean, 0)
 
     kernel_accumulate_outlet!(backend)(T_outlet, T_outlet_counter, ϕ, Idx_list_Inner, gridz, boreholes, dt, ndrange=(countxy_inner))
     T_outlet ./= T_outlet_counter
 
-    kernel_advection!(backend)(u_tmp, ϕ, gridx, gridy, gridz, Idx_list, Idx_list_Outer, countxy_inner, dt, t, boreholes, inlet_model, T_outlet, ndrange=(countz, countxy_inner + countxy_outer))
+
+    kernel_accumulate_turnaround_mean!(backend)(T_turnaround_mean, ϕ, Idx_list_Outer, gridz, count_outer_per_bh, boreholes, ndrange=(countz, countxy_outer))
+
+    kernel_advection!(backend)(u_tmp, ϕ, gridx, gridy, gridz, Idx_list, Idx_list_Outer, T_turnaround_mean, countxy_inner, dt, t, boreholes, inlet_model, T_outlet, ndrange=(countz, countxy_inner + countxy_outer))
 
     kernel_copy_advection!(backend)(ϕ, u_tmp, Idx_list, ndrange=(countz, countxy_inner + countxy_outer))
 
     return nothing
+end
+
+@kernel inbounds = true function kernel_accumulate_turnaround_mean!(T_turnaround_mean, @Const(ϕ), @Const(Idx_list_Outer), @Const(gridz), @Const(count_outer_per_bh), boreholes)
+    k, ij_xy = @index(Global, NTuple)
+
+    i, j, n_bh = Idx_list_Outer[ij_xy]
+    h = boreholes[n_bh].h
+
+    if gridz[k] <= h
+        # FIXME this currently assumes a uniform gird in x and y direction for the mean!
+        @atomic T_turnaround_mean[k, n_bh] += (ϕ[k, j, i] / count_outer_per_bh[n_bh])
+    end
 end
 
 
@@ -282,7 +298,7 @@ end
 end
 
 
-@kernel inbounds = true function kernel_advection!(u_tmp, @Const(ϕ), @Const(gridx), @Const(gridy), @Const(gridz), @Const(Idx_list), @Const(Idx_list_Outer), countxy_inner, Δt, t, boreholes, inlet_model, T_outlet)
+@kernel inbounds = true function kernel_advection!(u_tmp, @Const(ϕ), @Const(gridx), @Const(gridy), @Const(gridz), @Const(Idx_list), @Const(Idx_list_Outer), @Const(T_turnaround_mean), countxy_inner, Δt, t, boreholes, inlet_model, T_outlet)
     k, ij_xy = @index(Global, NTuple)
 
     i, j, n_bh = Idx_list[ij_xy]
@@ -313,28 +329,12 @@ end
                 # this is currently only fixed by added h to gridz when creating the grid
                 k_departure_left, k_departure_right, α = interpolation_helper(gridz, z_departure2)
 
-                # FIXME this can be made more efficient by precomputing it. 
                 # use mean temperature at turnaround => avoids artificial heat source from accidentally taking points from the pipe wall
                 # physically this assumes perfect mixing at the turnaround (which seems justifiable)
                 # Inner pipe turnaround - mean temperature from outer pipe
 
-                # FIXME this currently assumes a uniform gird in x and y direction for the mean!
-                mean_left = 0
-                mean_right = 0
-                count_outer = 0
 
-                for (i_outer, j_outer, bh_idx_outer) in Idx_list_Outer
-                    if bh_idx_outer == n_bh  # Only average over THIS borehole's outer pipe
-                        mean_left += ϕ[k_departure_left, j_outer, i_outer]
-                        mean_right += ϕ[k_departure_right, j_outer, i_outer]
-                        count_outer += 1
-                    end
-                end
-
-                mean_left /= count_outer
-                mean_right /= count_outer
-
-                u_tmp[ij_xy, k] = (1 - α) * mean_left + α * mean_right
+                u_tmp[ij_xy, k] = (1 - α) * T_turnaround_mean[k_departure_left, n_bh] + α * T_turnaround_mean[k_departure_right, n_bh]
 
 
             else
