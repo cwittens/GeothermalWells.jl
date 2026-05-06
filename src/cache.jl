@@ -1,4 +1,3 @@
-
 """
     create_advection_index_lists(backend, gridx, gridy, gridz, boreholes)
 
@@ -128,126 +127,358 @@ end
 
 
 
-# callbacks
-# TODO: save T_outlet in the future
 
 
+# =============================================================================
+# Checkpoint and snapshot file helpers
+# =============================================================================
+ 
 """
-    save_and_print_callback(saveat; print_every_n=1000, write_to_jld=false, data_folder_dir="", Float_used_to_save=Float32)
-
-Create callbacks for printing progress and saving solution snapshots.
-
-Returns `(save_cb, print_cb, saved_values)` for use with ODE solver.
-Optionally writes checkpoints to JLD2 files if `write_to_jld=true`.
+    _checkpoint_path(checkpoint_dir, checkpoint_id) -> String
+ 
+Return path for the restart checkpoint file: `checkpoint_dir/checkpoint_{id}.jld2`.
 """
-function save_and_print_callback(saveat; print_every_n=1000, write_to_jld=false, data_folder_dir="", Float_used_to_save=Float32)
-
-    function print_condition_open(u, t, integrator, print_every_n)
-        return integrator.stats.naccept % print_every_n == 0
+_checkpoint_path(checkpoint_dir, checkpoint_id) = joinpath(checkpoint_dir, "checkpoint_$(checkpoint_id).jld2")
+ 
+"""
+    _snapshot_path(checkpoint_dir, checkpoint_id, n) -> String
+ 
+Return path for snapshot number `n`: `checkpoint_dir/snapshot_{id}_{NNNN}.jld2`.
+"""
+_snapshot_path(checkpoint_dir, checkpoint_id, n) = joinpath(checkpoint_dir, "snapshot_$(checkpoint_id)_$(lpad(n, 4, '0')).jld2")
+ 
+"""
+    _load_existing_snapshots(checkpoint_dir, checkpoint_id, Float_used_to_save)
+ 
+Scan `checkpoint_dir` for existing snapshot files matching `checkpoint_id`, load them
+in chronological order, and return `(times, arrays, count)`.
+"""
+function _load_existing_snapshots(checkpoint_dir, checkpoint_id, Float_used_to_save)
+    times = Float64[]
+    arrays = Array{Float_used_to_save, 3}[]
+ 
+    if !isdir(checkpoint_dir)
+        return times, arrays, 0
     end
-
-    print_condition(u, t, integrator) = print_condition_open(u, t, integrator, print_every_n)
-
-    function print_affect!(integrator)
-        if integrator.t > 3600 * 24 * 365
-            println("Step $(integrator.stats.naccept), t = $(integrator.t) s, or $(round((integrator.t / 31536000), digits=4)) years")
-        elseif integrator.t > 3600 * 24
-            println("Step $(integrator.stats.naccept), t = $(integrator.t) s, or $(round((integrator.t / 86400), digits=2)) days")
-        else integrator.t > 3600
-            println("Step $(integrator.stats.naccept), t = $(integrator.t) s, or $(round((integrator.t / 3600), digits=2)) hours")
-        end
-        flush(stdout)
+ 
+    prefix = "snapshot_$(checkpoint_id)_"
+    files = filter(f -> startswith(f, prefix) && endswith(f, ".jld2"), readdir(checkpoint_dir))
+    sort!(files)
+ 
+    for f in files
+        path = joinpath(checkpoint_dir, f)
+        @load path u_save t_save
+        push!(times, Float64(t_save))
+        push!(arrays, Float_used_to_save.(u_save))
     end
-
-    # to have some process for long simulations
-    print_cb = DiscreteCallback(print_condition, print_affect!, save_positions=(false, false))
-
-    saved_values = SavedValues(Float64, Array{Float_used_to_save,3})
-
-    if write_to_jld
-
-        file_counter = Ref(0)
-        if !isdir(data_folder_dir)
-            mkdir(data_folder_dir)
-        end
-
-        function save_julia_array_and_write_to_JLD_open(u, t, integrator, data_folder_dir)
-            u_cpu = copy(adapt(CPU(), u))
-            file_counter[] += 1
-            @save joinpath(data_folder_dir, "checkpoint_$(file_counter[]).jld2") u_cpu
-            return u_cpu
-        end
-
-        # closer of the other function to make it work with Callback Interface
-        save_julia_array_and_write_to_JLD(u, t, integrator) = save_julia_array_and_write_to_JLD_open(u, t, integrator, data_folder_dir)
-
-        save_cb = SavingCallback(save_julia_array_and_write_to_JLD, saved_values, saveat=saveat)
-    else
-        function save_julia_array(u, t, integrator)
-            return copy(adapt(CPU(), u))
-        end
-
-        save_cb = SavingCallback(save_julia_array, saved_values, saveat=saveat)
-    end
-
-    return save_cb, print_cb, saved_values
-
+ 
+    return times, arrays, length(files)
 end
-
-
+ 
 """
-    get_simulation_callback(; saveat, print_every_n=1000, write_to_jld=false, data_folder_dir="")
-
+    _count_existing_snapshots(checkpoint_dir, checkpoint_id) -> Int
+ 
+Count existing snapshot files for a given checkpoint ID without loading them.
+"""
+function _count_existing_snapshots(checkpoint_dir, checkpoint_id)
+    if !isdir(checkpoint_dir)
+        return 0
+    end
+    prefix = "snapshot_$(checkpoint_id)_"
+    return count(f -> startswith(f, prefix) && endswith(f, ".jld2"), readdir(checkpoint_dir))
+end
+ 
+ 
+# =============================================================================
+# Callbacks
+# =============================================================================
+ 
+"""
+    get_simulation_callback(; saveat, print_every_n=1000,
+                              checkpoint_dir="", checkpoint_id="latest",
+                              checkpoint_every_n=0, Float_used_to_save=Float32)
+ 
 Create the required callback set for the simulation.
-
+ 
 !!! warning "Required"
     This callback is essential for the simulation. It performs the ADI (Alternating Direction
     Implicit) method for horizontal diffusion and the semi-Lagrangian advection. Without this
     callback, only vertical diffusion (handled by ROCK2) is computed.
-
-The callback combines three components:
+ 
+The callback combines up to four components:
 1. **ADI + Advection**: Horizontal diffusion and fluid advection (runs every timestep)
-2. **Progress printing**: Prints simulation progress every `print_every_n` steps
-3. **Solution saving**: Saves temperature field at times specified by `saveat`
-
+2. **Checkpointing** (optional): Periodically saves `(u, t)` to disk for fault-tolerant restarts
+3. **Progress printing**: Prints simulation progress every `print_every_n` steps
+4. **Solution saving**: Saves temperature field at times specified by `saveat`. When
+   `checkpoint_dir` is provided, snapshots are also written to disk so that data persists
+   across crash/restart cycles.
+ 
+The checkpoint callback is placed directly after the ADI + advection callback in the
+`CallbackSet` ordering. This ensures that a checkpoint always represents a fully consistent
+state (both ROCK2 vertical diffusion and ADI horizontal diffusion + advection have been
+applied), so restarting from a checkpoint produces identical results to an uninterrupted run.
+ 
+!!! note "Post-solve snapshot assembly"
+    The ODE solver clears `saved_values` at the start of `solve()`, so it only contains
+    snapshots from the current run. To get the full history across all crash/restart cycles,
+    call [`reload_snapshots!`](@ref) after the solve completes.
+ 
 # Arguments
 - `saveat`: Times at which to save the solution (e.g., `range(0, 3600, 10)` or `[0.0, 3600.0]`)
 - `print_every_n=1000`: Print progress every N accepted timesteps
-- `write_to_jld=false`: If `true`, also write checkpoints to JLD2 files
-- `data_folder_dir=""`: Directory for JLD2 checkpoint files (required if `write_to_jld=true`)
-
+- `checkpoint_dir=""`: Directory for checkpoint and snapshot files. Empty string disables
+    both checkpointing and persistent snapshots (solutions are only kept in memory).
+- `checkpoint_id="latest"`: Unique identifier for checkpoint/snapshot files (useful when
+    multiple simulations share the same directory). Files are named
+    `checkpoint_{id}.jld2` (restart) and `snapshot_{id}_NNNN.jld2` (data).
+- `checkpoint_every_n=0`: Save a restart checkpoint every N accepted timesteps. Set to 0
+    to disable restart checkpointing (snapshots at `saveat` times are still written if
+    `checkpoint_dir` is provided).
+- `Float_used_to_save=Float32`: Floating point type for saved solution snapshots. Restart
+    checkpoints always use full `Float64` precision.
+ 
 # Returns
 - `callback`: Combined `CallbackSet` to pass to `solve(..., callback=callback)`
-- `saved_values`: `SavedValues` object containing saved solutions accessible via `saved_values.saveval`
-
+- `saved_values`: `SavedValues` object. After `solve`, contains only snapshots from the
+  current run. Call [`reload_snapshots!`](@ref) to populate with the full history from disk.
+ 
 # Example
 ```julia
 callback, saved_values = get_simulation_callback(
-    saveat=[0.0, 3600.0, 7200.0],
-    print_every_n=100
+    saveat=saveat,
+    print_every_n=100_000,
+    checkpoint_dir="output/",
+    checkpoint_id="my_simulation",
+    checkpoint_every_n=500_000
 )
 solve(prob, ROCK2(eigen_est=eigen_estimator), callback=callback, dt=80.0, adaptive=false)
-
-# Access saved solutions
+ 
+# Assemble full history from all snapshot files (across all crash/restart cycles)
+reload_snapshots!(saved_values, "output/", "my_simulation")
+```
+"""
+function get_simulation_callback(; saveat, print_every_n=1000,
+                                   checkpoint_dir="", checkpoint_id="latest",
+                                   checkpoint_every_n=0, Float_used_to_save=Float32)
+ 
+    use_disk = !isempty(checkpoint_dir)
+    use_restart_checkpoint = use_disk && checkpoint_every_n > 0
+ 
+    saved_values = SavedValues(Float64, Array{Float_used_to_save, 3})
+ 
+    # --- Determine snapshot file numbering (continue from existing files) ---
+    snapshot_counter = Ref(0)
+    if use_disk
+        mkpath(checkpoint_dir)
+        snapshot_counter[] = _count_existing_snapshots(checkpoint_dir, checkpoint_id)
+        if snapshot_counter[] > 0
+            println("Found $(snapshot_counter[]) existing snapshot files, continuing numbering from there.")
+        end
+    end
+ 
+    # --- Snapshot saving callback (triggered at saveat times) ---
+    if use_disk
+        function save_func_disk(u, t, integrator)
+            u_cpu = copy(adapt(CPU(), u))
+            u_save = Float_used_to_save.(u_cpu)
+            t_save = Float64(t)
+            snapshot_counter[] += 1
+            @save _snapshot_path(checkpoint_dir, checkpoint_id, snapshot_counter[]) u_save t_save
+            return u_save
+        end
+        save_cb = SavingCallback(save_func_disk, saved_values, saveat=saveat)
+    else
+        function save_func_mem(u, t, integrator)
+            return Float_used_to_save.(copy(adapt(CPU(), u)))
+        end
+        save_cb = SavingCallback(save_func_mem, saved_values, saveat=saveat)
+    end
+ 
+    # --- Print callback ---
+    function print_condition(u, t, integrator)
+        return integrator.stats.naccept % print_every_n == 0
+    end
+ 
+    function print_affect!(integrator)
+        t = integrator.t
+        step = integrator.stats.naccept
+        if t > 3600 * 24 * 365
+            println("Step $(step), t = $(t) s, or $(round(t / 31536000, digits=4)) years")
+        elseif t > 3600 * 24
+            println("Step $(step), t = $(t) s, or $(round(t / 86400, digits=2)) days")
+        else
+            println("Step $(step), t = $(t) s, or $(round(t / 3600, digits=2)) hours")
+        end
+        flush(stdout)
+    end
+ 
+    print_cb = DiscreteCallback(print_condition, print_affect!, save_positions=(false, false))
+ 
+    # --- ADI + Advection callback (must run every step) ---
+    ADI_and_ADV = DiscreteCallback((u, t, integrator) -> true, ADI_and_ADV_callback!,
+                                   save_positions=(false, false))
+ 
+    # --- Restart checkpoint callback (optional, every N steps) ---
+    # Ordering in CallbackSet matters:
+    #   1. ADI_and_ADV  -- state is fully consistent after this
+    #   2. checkpoint    -- saves the consistent state to disk
+    #   3. print         -- progress output
+    #   4. save          -- snapshot at saveat times
+    if use_restart_checkpoint
+        cp_path = _checkpoint_path(checkpoint_dir, checkpoint_id)
+ 
+        checkpoint_condition(u, t, integrator) = integrator.stats.naccept % checkpoint_every_n == 0
+ 
+        function checkpoint_affect!(integrator)
+            u_cpu = Float64.(Array(adapt(CPU(), integrator.u)))
+            t_checkpoint = Float64(integrator.t)
+            @save cp_path u_cpu t_checkpoint
+            println("Restart checkpoint saved at t = $(t_checkpoint) s",
+                    " ($(round(t_checkpoint / 31536000, digits=4)) years)")
+            flush(stdout)
+        end
+ 
+        checkpoint_cb = DiscreteCallback(checkpoint_condition, checkpoint_affect!,
+                                         save_positions=(false, false))
+        callback = CallbackSet(ADI_and_ADV, checkpoint_cb, print_cb, save_cb)
+    else
+        callback = CallbackSet(ADI_and_ADV, print_cb, save_cb)
+    end
+ 
+    return callback, saved_values
+end
+ 
+ 
+# =============================================================================
+# Post-solve snapshot assembly
+# =============================================================================
+ 
+"""
+    reload_snapshots!(saved_values, checkpoint_dir, checkpoint_id; Float_used_to_save=Float32)
+ 
+Load all snapshot files from disk into `saved_values`, sorted by time.
+ 
+This replaces the contents of `saved_values.t` and `saved_values.saveval` with the full
+history from all snapshot files matching the given `checkpoint_id`. Call this after `solve`
+to assemble the complete history across all crash/restart cycles.
+ 
+The ODE solver clears `saved_values` at the start of each `solve()` call, so without
+calling this function, `saved_values` only contains snapshots from the most recent run.
+ 
+# Arguments
+- `saved_values`: The `SavedValues` object returned by [`get_simulation_callback`](@ref)
+- `checkpoint_dir`: Directory containing snapshot files
+- `checkpoint_id`: Unique identifier matching the one used in `get_simulation_callback`
+- `Float_used_to_save=Float32`: Floating point type matching the one used in `get_simulation_callback`
+ 
+# Example
+```julia
+callback, saved_values = get_simulation_callback(
+    saveat=saveat, checkpoint_dir="output/", checkpoint_id="my_sim", checkpoint_every_n=500_000)
+solve(prob, ROCK2(...), callback=callback, ...)
+ 
+# After solve, saved_values only has this run's data.
+# Reload to get the full history:
+reload_snapshots!(saved_values, "output/", "my_sim")
+ 
+# Now saved_values.t and saved_values.saveval contain ALL snapshots, sorted by time.
 T_final = saved_values.saveval[end]
 ```
 """
-function get_simulation_callback(; saveat, print_every_n=1000, write_to_jld=false, data_folder_dir="")
-
-        if write_to_jld && isempty(data_folder_dir)
-        error("When `write_to_jld` is true, `data_folder_dir` must be provided and cannot be an empty string")
+function reload_snapshots!(saved_values, checkpoint_dir, checkpoint_id; Float_used_to_save=Float32)
+    times, arrays, count = _load_existing_snapshots(checkpoint_dir, checkpoint_id, Float_used_to_save)
+ 
+    # Sort by time
+    perm = sortperm(times)
+    times = times[perm]
+    arrays = arrays[perm]
+ 
+    # Replace contents of saved_values
+    resize!(saved_values.t, count)
+    resize!(saved_values.saveval, count)
+    for i in 1:count
+        saved_values.t[i] = times[i]
+        saved_values.saveval[i] = arrays[i]
     end
-    
-    save_cb, print_cb, saved_values = save_and_print_callback(saveat; print_every_n=print_every_n, write_to_jld=write_to_jld, data_folder_dir=data_folder_dir)
-
-    ADI_and_ADV = DiscreteCallback((u, t, integrator) -> true, ADI_and_ADV_callback!, save_positions=(false, false))
-
-    callback = CallbackSet(ADI_and_ADV, print_cb, save_cb)
-
-    return callback, saved_values
+ 
+    println("Loaded $(count) snapshots from disk into saved_values",
+            count > 0 ? " (t = $(round(times[1] / 31536000, digits=4)) to $(round(times[end] / 31536000, digits=4)) years)" : "")
+ 
+    return saved_values
 end
-
-
-
-
-# TODO: semi discretize function stuff
+ 
+ 
+# =============================================================================
+# Restart helper
+# =============================================================================
+ 
+"""
+    prepare_restart(T0, tspan, saveat; checkpoint_dir, checkpoint_id="latest", backend=CPU())
+ 
+Check for an existing checkpoint and prepare the simulation for a fresh start or a restart.
+ 
+If a checkpoint file exists at `checkpoint_dir/checkpoint_{checkpoint_id}.jld2`, the saved
+temperature field and time are loaded. The initial condition is replaced, `tspan` is adjusted
+to start from the checkpoint time, and `saveat` is filtered to only include future save times.
+ 
+If no checkpoint file exists, all arguments are returned unchanged (identity operation).
+ 
+This function pairs with [`get_simulation_callback`](@ref): use the same `checkpoint_dir`
+and `checkpoint_id` for both so that checkpoints, snapshots, and restart logic all align.
+ 
+# Arguments
+- `T0`: Fresh initial condition (e.g., from `initial_condition_thermal_gradient`)
+- `tspan`: Full time span `(t_start, t_end)`
+- `saveat`: Save times (any iterable of times)
+- `checkpoint_dir`: Directory where checkpoint files are stored
+- `checkpoint_id="latest"`: Unique identifier matching the one used in `get_simulation_callback`
+- `backend=CPU()`: Computation backend to adapt the loaded array to
+ 
+# Returns
+`(T0, tspan, saveat)` -- either unchanged (no checkpoint) or updated for restart.
+ 
+# Example
+```julia
+T0_fresh = initial_condition_thermal_gradient(backend, Float64, gridx, gridy, gridz;
+    T_surface=10.0, gradient=0.035)
+tspan_full = (0.0, 3600.0 * 24 * 365 * 20)
+saveat_full = range(tspan_full..., 21)
+ 
+T0, tspan, saveat = prepare_restart(
+    T0_fresh, tspan_full, saveat_full;
+    checkpoint_dir="output/",
+    checkpoint_id="my_sim",
+    backend=CUDABackend()
+)
+ 
+prob = ODEProblem(rhs_diffusion_z!, T0, tspan, cache)
+callback, saved_values = get_simulation_callback(saveat=saveat,
+    checkpoint_dir="output/", checkpoint_id="my_sim", checkpoint_every_n=500_000)
+solve(prob, ROCK2(...), callback=callback, ...)
+ 
+# Assemble full history from disk
+reload_snapshots!(saved_values, "output/", "my_sim")
+```
+"""
+function prepare_restart(T0, tspan, saveat; checkpoint_dir, checkpoint_id="latest", backend=CPU())
+    cp_path = _checkpoint_path(checkpoint_dir, checkpoint_id)
+ 
+    if !isfile(cp_path)
+        println("No checkpoint found at $(cp_path), starting fresh.")
+        return T0, tspan, saveat
+    end
+ 
+    @load cp_path u_cpu t_checkpoint
+ 
+    println("Loaded restart checkpoint from $(cp_path)")
+    println("  Restarting at t = $(t_checkpoint) s ($(round(t_checkpoint / 31536000, digits=4)) years)")
+ 
+    T0_restart = adapt(backend, eltype(T0).(u_cpu))
+    tspan_restart = (t_checkpoint, tspan[2])
+    saveat_restart = collect(filter(t -> t > t_checkpoint, saveat))
+ 
+    println("  tspan: $(tspan_restart)")
+    println("  saveat points remaining: $(length(saveat_restart))")
+ 
+    return T0_restart, tspan_restart, saveat_restart
+end

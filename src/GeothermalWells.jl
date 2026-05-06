@@ -6,7 +6,7 @@ using DiffEqCallbacks: SavedValues, SavingCallback, CallbackSet
 using MuladdMacro: @muladd
 using DiffEqBase: DiscreteCallback
 using DelimitedFiles: readdlm
-using JLD2: @save
+using JLD2: @save, @load
 using Statistics: mean
 using Plots: plot, plot!, vline!, hline!, annotate!, scatter, current, text
 
@@ -29,7 +29,7 @@ export AbstractMaterialProperties,
     initial_condition_thermal_gradient
 
 # Exports from cache.jl
-export create_cache, get_simulation_callback
+export create_cache, get_simulation_callback, prepare_restart, reload_snapshots!
 
 # Exports from grids.jl
 export compute_domain, create_uniform_gridz_with_borehole_depths, create_adaptive_grid_1d
