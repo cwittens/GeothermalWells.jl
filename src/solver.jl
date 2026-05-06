@@ -55,6 +55,11 @@ end
     else # compute A_i * ϕ
         dϕ[k, j, i] = dϕ_val
     end
+
+    # Dirichlet-like BC: no vertical diffusion at the surface
+    if xyz == :z && k == 1
+        dϕ[k, j, i] = zero(eltype(ϕ))
+    end
 end
 
 
