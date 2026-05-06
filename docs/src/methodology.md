@@ -2,7 +2,7 @@
 
 This page provides an overview of the numerical methods used in GeothermalWells.jl.
 Also, see the accompanying paper:
-[A Full Three-Dimensional GPU-Accelerated Model for Deep Borehole Heat Exchangers (DBHEs) Enabling Simulation of Well Arrays](https://pangea.stanford.edu/ERE/db/GeoConf/papers/SGW/2026/Wittenstein.pdf) or my Master Thesis for more details(TODO: add link when published).
+[A Full Three-Dimensional GPU-Accelerated Model for Deep Borehole Heat Exchangers (DBHEs) Enabling Simulation of Well Arrays](https://pangea.stanford.edu/ERE/db/GeoConf/papers/SGW/2026/Wittenstein.pdf) or my Master Thesis for more details (TODO: add link when published).
 
 ## Governing Equation
 
