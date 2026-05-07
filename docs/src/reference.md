@@ -44,6 +44,13 @@ eigen_estimator
 get_simulation_callback
 ```
 
+## Checkpointing and Restart
+
+```@docs
+prepare_restart
+reload_snapshots!
+```
+
 ## Utilities
 
 ```@docs

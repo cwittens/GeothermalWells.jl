@@ -168,6 +168,41 @@ solve(
 )
 ```
 
+## Checkpointing and Restart
+
+For long-running simulations that may be interrupted, pass `checkpoint_dir` and `checkpoint_id` to enable fault-tolerant checkpointing. Use [`prepare_restart`](@ref) at the top and [`reload_snapshots!`](@ref) at the bottom, and the same script can be resubmitted without changes:
+
+```julia
+checkpoint_dir = joinpath(@__DIR__, "simulation_data")
+checkpoint_id = splitext(basename(@__FILE__))[1]
+
+T0_fresh = initial_condition_thermal_gradient(backend, Float_used, gridx, gridy, gridz;
+    T_surface=10.0, gradient=0.03)
+tspan_full = (0.0, 3600.0 * 24 * 365 * 20)
+saveat_full = range(tspan_full..., 21)
+
+# Loads checkpoint if available, otherwise passes through unchanged
+T0, tspan, saveat = prepare_restart(T0_fresh, tspan_full, saveat_full;
+    checkpoint_dir=checkpoint_dir, checkpoint_id=checkpoint_id, backend=backend)
+
+prob = ODEProblem(rhs_diffusion_z!, T0, tspan, cache)
+
+callback, saved_values = get_simulation_callback(
+    saveat=saveat,
+    checkpoint_dir=checkpoint_dir,
+    checkpoint_id=checkpoint_id,
+    checkpoint_every_n=500_000
+)
+
+solve(prob, ROCK2(max_stages=100, eigen_est=eigen_estimator),
+    save_everystep=false, callback=callback, adaptive=false, dt=80.0, maxiters=Int(1e10))
+
+# Assemble full snapshot history from disk (across all restart cycles)
+reload_snapshots!(saved_values, checkpoint_dir, checkpoint_id)
+```
+
+Use distinct `checkpoint_id` values when multiple simulations share the same directory. See the [API Reference](@ref api-reference) for details on all keyword arguments.
+
 ## GPU Acceleration
 
 For GPU acceleration, simply change the backend:
