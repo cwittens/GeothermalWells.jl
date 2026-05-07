@@ -13,6 +13,23 @@ using TestItems
     @test isempty(saved_values.t)
 end
 
+@testitem "Print callback branches" begin
+    using GeothermalWells
+
+    # Without checkpointing: callbacks are (ADI_and_ADV, print_cb, save_cb)
+    callback, _ = get_simulation_callback(saveat=[0.0], print_every_n=1)
+    print_cb = callback.discrete_callbacks[2]
+
+    # t > 1 year → prints in years
+    @test_nowarn print_cb.affect!((stats=(naccept=1,), t=3600.0 * 24 * 365 * 2.0))
+
+    # t > 1 day → prints in days
+    @test_nowarn print_cb.affect!((stats=(naccept=2,), t=3600.0 * 24 * 5.0))
+
+    # t <= 1 day → prints in hours
+    @test_nowarn print_cb.affect!((stats=(naccept=3,), t=7200.0))
+end
+
 @testitem "Checkpoint path helpers" begin
     using GeothermalWells
 
@@ -79,6 +96,16 @@ end
     @test c2 == 0
     @test isempty(t2)
 end
+
+@testitem "_load_existing_snapshots - nonexistent directory" begin
+    using GeothermalWells
+
+    times, arrays, count = GeothermalWells._load_existing_snapshots(
+        "/this/does/not/exist", "test", Float32)
+    @test count == 0
+    @test isempty(times)
+end
+
 
 @testitem "prepare_restart - fresh start" begin
     using GeothermalWells
