@@ -4,11 +4,15 @@ GeothermalWells.jl follows [semantic versioning](https://semver.org/).
 
 ## Unreleased
 
+### Added
+- Fault-tolerant checkpointing and restart via `prepare_restart`, `reload_snapshots!`, and new `checkpoint_dir`/`checkpoint_id`/`checkpoint_every_n` keyword arguments on `get_simulation_callback`
+- Dirichlet-like BC for vertical diffusion at the surface
+
 ### Changed
-- Operator splitting changed from Lie splitting to Strang splitting for improved accuracy
+- **Breaking:** Operator splitting changed from Lie splitting to Strang splitting for improved accuracy
+- **Breaking:** Removed `write_to_jld` and `data_folder_dir` keyword arguments from `get_simulation_callback`
 - Advection now precomputes turnaround mean temperature, improving efficiency for well array simulations
 - Improved documentation on methodology
-- added Dirichlet-like BC for vertical diffusion at the surface
 
 ## v0.1.3
 

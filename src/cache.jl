@@ -224,7 +224,7 @@ applied), so restarting from a checkpoint produces identical results to an unint
     call [`reload_snapshots!`](@ref) after the solve completes.
  
 # Arguments
-- `saveat`: Times at which to save the solution (e.g., `range(0, 3600, 10)` or `[0.0, 3600.0]`)
+- `saveat`: Times at which to save the solution (e.g., `range(0, 3600, 10)` or `[0, 1800, 3600]`)
 - `print_every_n=1000`: Print progress every N accepted timesteps
 - `checkpoint_dir=""`: Directory for checkpoint and snapshot files. Empty string disables
     both checkpointing and persistent snapshots (solutions are only kept in memory).
@@ -460,7 +460,7 @@ solve(prob, ROCK2(...), callback=callback, ...)
 reload_snapshots!(saved_values, "output/", "my_sim")
 ```
 """
-function prepare_restart(T0, tspan, saveat; checkpoint_dir, checkpoint_id="latest", backend=CPU())
+function prepare_restart(T0, tspan, saveat; checkpoint_dir, checkpoint_id="latest", backend)
     cp_path = _checkpoint_path(checkpoint_dir, checkpoint_id)
  
     if !isfile(cp_path)
