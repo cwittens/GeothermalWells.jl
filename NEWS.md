@@ -4,6 +4,8 @@ GeothermalWells.jl follows [semantic versioning](https://semver.org/).
 
 ## Unreleased
 
+## v0.2.0
+
 ### Added
 - Fault-tolerant checkpointing and restart via `prepare_restart`, `reload_snapshots!`, and new `checkpoint_dir`/`checkpoint_id`/`checkpoint_every_n` keyword arguments on `get_simulation_callback`
 - Dirichlet-like BC for vertical diffusion at the surface
