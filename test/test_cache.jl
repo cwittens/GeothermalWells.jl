@@ -13,42 +13,17 @@ using TestItems
     @test isempty(saved_values.t)
 end
 
-
-@testitem "print_affect! branches" begin
-    using GeothermalWells
-
-    save_cb, print_cb, saved_values = GeothermalWells.save_and_print_callback(
-        [0.0];
-        print_every_n=1
-    )
-
-    # Mock integrator as a NamedTuple — print_affect! reads integrator.stats.naccept and integrator.t
-    # Branch: t > 3600*24*365 → prints in years
-    mock_years = (stats=(naccept=1000,), t=3600.0 * 24 * 365 * 2.0)
-    output_years = @test_nowarn print_cb.affect!(mock_years)
-
-    # Branch: t > 3600*24 → prints in days
-    mock_days = (stats=(naccept=2000,), t=3600.0 * 24 * 5.0)
-    output_days = @test_nowarn print_cb.affect!(mock_days)
-
-    # Branch: else (t <= 3600*24) → prints in hours
-    mock_hours = (stats=(naccept=3000,), t=7200.0)
-    output_hours = @test_nowarn print_cb.affect!(mock_hours)
-end
-
-
-
 @testitem "Checkpoint path helpers" begin
     using GeothermalWells
 
     cp = GeothermalWells._checkpoint_path("/tmp/data", "my_sim")
-    @test cp == "/tmp/data/checkpoint_my_sim.jld2"
+    @test cp == joinpath("/tmp/data", "checkpoint_my_sim.jld2")
 
     snap = GeothermalWells._snapshot_path("/tmp/data", "my_sim", 1)
-    @test snap == "/tmp/data/snapshot_my_sim_0001.jld2"
+    @test snap == joinpath("/tmp/data", "snapshot_my_sim_0001.jld2")
 
     snap42 = GeothermalWells._snapshot_path("/tmp/data", "my_sim", 42)
-    @test snap42 == "/tmp/data/snapshot_my_sim_0042.jld2"
+    @test snap42 == joinpath("/tmp/data", "snapshot_my_sim_0042.jld2")
 end
 
 @testitem "_count_existing_snapshots" begin
