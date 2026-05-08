@@ -43,19 +43,25 @@ end
     @test snap42 == joinpath("/tmp/data", "snapshot_my_sim_0042.jld2")
 end
 
-@testitem "_count_existing_snapshots" begin
+@testitem "_clean_and_count_snapshots - empty inputs" begin
+    using GeothermalWells
+
+    tmpdir = mktempdir()
+
+    # Empty directory
+    @test GeothermalWells._clean_and_count_snapshots(tmpdir, "test") == 0
+
+    # Nonexistent directory
+    @test GeothermalWells._clean_and_count_snapshots(joinpath(tmpdir, "nope"), "test") == 0
+end
+
+@testitem "_clean_and_count_snapshots - removes orphaned snapshots" begin
     using GeothermalWells
     using JLD2: @save
 
     tmpdir = mktempdir()
 
-    # Empty directory
-    @test GeothermalWells._count_existing_snapshots(tmpdir, "test") == 0
-
-    # Nonexistent directory
-    @test GeothermalWells._count_existing_snapshots(joinpath(tmpdir, "nope"), "test") == 0
-
-    # Create some snapshot files
+    # Existing snapshots without a checkpoint are stale and should be removed.
     for i in 1:3
         path = GeothermalWells._snapshot_path(tmpdir, "test", i)
         u_save = zeros(Float32, 2, 2, 2)
@@ -63,10 +69,80 @@ end
         @save path u_save t_save
     end
 
-    @test GeothermalWells._count_existing_snapshots(tmpdir, "test") == 3
+    # A different checkpoint_id should be ignored and left in place.
+    other_path = GeothermalWells._snapshot_path(tmpdir, "other", 1)
+    u_save = ones(Float32, 2, 2, 2)
+    t_save = 10.0
+    @save other_path u_save t_save
 
-    # Different checkpoint_id should not count
-    @test GeothermalWells._count_existing_snapshots(tmpdir, "other") == 0
+    @test GeothermalWells._clean_and_count_snapshots(tmpdir, "test") == 0
+
+    for i in 1:3
+        @test !isfile(GeothermalWells._snapshot_path(tmpdir, "test", i))
+    end
+    @test isfile(other_path)
+    @test GeothermalWells._load_existing_snapshots(tmpdir, "test", Float32)[3] == 0
+end
+
+@testitem "snapshot file matching avoids checkpoint_id prefix collisions" begin
+    using GeothermalWells
+    using JLD2: @save
+
+    tmpdir = mktempdir()
+
+    foo_path = GeothermalWells._snapshot_path(tmpdir, "foo", 1)
+    u_save = fill(1.0f0, 2, 2, 2)
+    t_save = 1.0
+    @save foo_path u_save t_save
+
+    foo_bar_path = GeothermalWells._snapshot_path(tmpdir, "foo_bar", 1)
+    u_save = fill(2.0f0, 2, 2, 2)
+    t_save = 2.0
+    @save foo_bar_path u_save t_save
+
+    times, arrays, count = GeothermalWells._load_existing_snapshots(tmpdir, "foo", Float32)
+    @test count == 1
+    @test times == [1.0]
+    @test all(arrays[1] .== 1.0f0)
+
+    @test GeothermalWells._clean_and_count_snapshots(tmpdir, "foo") == 0
+    @test !isfile(foo_path)
+    @test isfile(foo_bar_path)
+
+    times, arrays, count = GeothermalWells._load_existing_snapshots(tmpdir, "foo_bar", Float32)
+    @test count == 1
+    @test times == [2.0]
+    @test all(arrays[1] .== 2.0f0)
+end
+
+@testitem "_clean_and_count_snapshots - removes snapshots newer than checkpoint" begin
+    using GeothermalWells
+    using JLD2: @save
+
+    tmpdir = mktempdir()
+
+    cp_path = GeothermalWells._checkpoint_path(tmpdir, "restart")
+    t_checkpoint = 200.0
+    @save cp_path t_checkpoint
+
+    for (i, t) in enumerate([0.0, 100.0, 200.0, 300.0])
+        path = GeothermalWells._snapshot_path(tmpdir, "restart", i)
+        u_save = fill(Float32(t), 2, 2, 2)
+        t_save = t
+        @save path u_save t_save
+    end
+
+    @test GeothermalWells._clean_and_count_snapshots(tmpdir, "restart") == 3
+
+    for i in 1:3
+        @test isfile(GeothermalWells._snapshot_path(tmpdir, "restart", i))
+    end
+    @test !isfile(GeothermalWells._snapshot_path(tmpdir, "restart", 4))
+
+    times, arrays, count = GeothermalWells._load_existing_snapshots(tmpdir, "restart", Float32)
+    @test count == 3
+    @test times == [0.0, 100.0, 200.0]
+    @test all(arrays[3] .== 200.0f0)
 end
 
 @testitem "_load_existing_snapshots" begin
@@ -232,15 +308,15 @@ end
     @test isdir(subdir)
 end
 
-@testitem "get_simulation_callback - continues snapshot numbering" begin
+@testitem "get_simulation_callback - removes snapshots when checkpoint missing" begin
     using GeothermalWells
     using JLD2: @save
 
     tmpdir = mktempdir()
 
-    # Pre-create 3 snapshot files
-    for i in 1:3
-        path = GeothermalWells._snapshot_path(tmpdir, "cont", i)
+    # Pre-create snapshots from an earlier run, but no checkpoint.
+    for i in 1:2
+        path = GeothermalWells._snapshot_path(tmpdir, "fresh", i)
         u_save = zeros(Float32, 2, 2, 2)
         t_save = Float64(i)
         @save path u_save t_save
@@ -249,14 +325,47 @@ end
     callback, saved_values = get_simulation_callback(
         saveat=[0.0],
         checkpoint_dir=tmpdir,
+        checkpoint_id="fresh",
+        checkpoint_every_n=100
+    )
+
+    @test GeothermalWells._load_existing_snapshots(tmpdir, "fresh", Float32)[3] == 0
+    for i in 1:2
+        @test !isfile(GeothermalWells._snapshot_path(tmpdir, "fresh", i))
+    end
+end
+
+@testitem "get_simulation_callback - cleans and continues snapshot numbering" begin
+    using GeothermalWells
+    using JLD2: @save
+
+    tmpdir = mktempdir()
+
+    cp_path = GeothermalWells._checkpoint_path(tmpdir, "cont")
+    t_checkpoint = 3.0
+    @save cp_path t_checkpoint
+
+    # Three snapshots are covered by the checkpoint. The fourth is from after
+    # the checkpoint and should be removed before continuing.
+    for i in 1:4
+        path = GeothermalWells._snapshot_path(tmpdir, "cont", i)
+        u_save = zeros(Float32, 2, 2, 2)
+        t_save = Float64(i)
+        @save path u_save t_save
+    end
+
+    callback, saved_values = get_simulation_callback(
+        saveat=[4.0],
+        checkpoint_dir=tmpdir,
         checkpoint_id="cont",
         checkpoint_every_n=100
     )
 
-    # The counter should start at 3, so the next snapshot will be _0004
-    # We can't easily test the counter directly, but we can verify
-    # the existing files weren't overwritten
-    @test GeothermalWells._count_existing_snapshots(tmpdir, "cont") == 3
+    @test GeothermalWells._load_existing_snapshots(tmpdir, "cont", Float32)[3] == 3
+    for i in 1:3
+        @test isfile(GeothermalWells._snapshot_path(tmpdir, "cont", i))
+    end
+    @test !isfile(GeothermalWells._snapshot_path(tmpdir, "cont", 4))
 end
 
 @testitem "Checkpoint integration - restart produces same result" begin
@@ -336,7 +445,7 @@ end
         save_everystep=false, callback=cb_r1, adaptive=false, dt=Δt, maxiters=Int(1e10))
 
     # Should have snapshots for t=0 and t=400 on disk
-    @test GeothermalWells._count_existing_snapshots(dir_restart, "int") == 2
+    @test GeothermalWells._load_existing_snapshots(dir_restart, "int", Float32)[3] == 2
 
     # Checkpoint file should exist
     @test isfile(GeothermalWells._checkpoint_path(dir_restart, "int"))

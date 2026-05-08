@@ -146,6 +146,18 @@ _checkpoint_path(checkpoint_dir, checkpoint_id) = joinpath(checkpoint_dir, "chec
 Return path for snapshot number `n`: `checkpoint_dir/snapshot_{id}_{NNNN}.jld2`.
 """
 _snapshot_path(checkpoint_dir, checkpoint_id, n) = joinpath(checkpoint_dir, "snapshot_$(checkpoint_id)_$(lpad(n, 4, '0')).jld2")
+
+function _is_snapshot_file(filename, checkpoint_id)
+    prefix = "snapshot_$(checkpoint_id)_"
+    suffix = ".jld2"
+
+    startswith(filename, prefix) || return false
+    endswith(filename, suffix) || return false
+
+    number_part_with_suffix = filename[nextind(filename, lastindex(prefix)):end]
+    number_part = chop(number_part_with_suffix; tail=length(suffix))
+    return !isempty(number_part) && all(isdigit, number_part)
+end
  
 """
     _load_existing_snapshots(checkpoint_dir, checkpoint_id, Float_used_to_save)
@@ -161,8 +173,7 @@ function _load_existing_snapshots(checkpoint_dir, checkpoint_id, Float_used_to_s
         return times, arrays, 0
     end
  
-    prefix = "snapshot_$(checkpoint_id)_"
-    files = filter(f -> startswith(f, prefix) && endswith(f, ".jld2"), readdir(checkpoint_dir))
+    files = filter(f -> _is_snapshot_file(f, checkpoint_id), readdir(checkpoint_dir))
     sort!(files)
  
     for f in files
@@ -176,16 +187,58 @@ function _load_existing_snapshots(checkpoint_dir, checkpoint_id, Float_used_to_s
 end
  
 """
-    _count_existing_snapshots(checkpoint_dir, checkpoint_id) -> Int
+    _clean_and_count_snapshots(checkpoint_dir, checkpoint_id) -> Int
  
-Count existing snapshot files for a given checkpoint ID without loading them.
+Determine the correct snapshot counter by checking consistency with the checkpoint state.
+ 
+**No checkpoint file exists:** All existing snapshot files for this ID are stale (either from
+a previous simulation with different parameters, or from a crashed run with no checkpoint).
+Since the simulation will start from `t=0` and regenerate all saveat times, the old files
+are deleted and the counter starts at 0.
+ 
+**Checkpoint file exists at `t_checkpoint`:** Snapshots with `t_save <= t_checkpoint` are
+valid (produced before the checkpoint). Snapshots with `t_save > t_checkpoint` are stale
+(produced after the checkpoint in a run that later crashed, so the checkpoint doesn't
+reflect them). Stale files are deleted and the counter is set to the number of valid files.
 """
-function _count_existing_snapshots(checkpoint_dir, checkpoint_id)
+function _clean_and_count_snapshots(checkpoint_dir, checkpoint_id)
     if !isdir(checkpoint_dir)
         return 0
     end
-    prefix = "snapshot_$(checkpoint_id)_"
-    return count(f -> startswith(f, prefix) && endswith(f, ".jld2"), readdir(checkpoint_dir))
+ 
+    files = filter(f -> _is_snapshot_file(f, checkpoint_id), readdir(checkpoint_dir))
+    sort!(files)
+ 
+    if isempty(files)
+        return 0
+    end
+ 
+    # Check for checkpoint
+    cp_path = _checkpoint_path(checkpoint_dir, checkpoint_id)
+    if isfile(cp_path)
+        @load cp_path t_checkpoint
+ 
+        # Keep snapshots with t_save <= t_checkpoint, delete the rest
+        valid_count = 0
+        for f in files
+            path = joinpath(checkpoint_dir, f)
+            @load path t_save
+            if t_save <= t_checkpoint
+                valid_count += 1
+            else
+                rm(path)
+                println("  Removed stale snapshot $(f) (t=$(t_save) > t_checkpoint=$(t_checkpoint))")
+            end
+        end
+        return valid_count
+    else
+        # No checkpoint: starting from t=0, all existing snapshots are stale
+        for f in files
+            rm(joinpath(checkpoint_dir, f))
+        end
+        println("  Removed $(length(files)) stale snapshot files (no checkpoint found, starting fresh).")
+        return 0
+    end
 end
  
  
@@ -224,7 +277,7 @@ applied), so restarting from a checkpoint produces identical results to an unint
     call [`reload_snapshots!`](@ref) after the solve completes.
  
 # Arguments
-- `saveat`: Times at which to save the solution (e.g., `range(0, 3600, 10)` or `[0, 1800, 3600]`)
+- `saveat`: Times at which to save the solution (e.g., `range(0, 3600, 10)` or `[0.0, 3600.0]`)
 - `print_every_n=1000`: Print progress every N accepted timesteps
 - `checkpoint_dir=""`: Directory for checkpoint and snapshot files. Empty string disables
     both checkpointing and persistent snapshots (solutions are only kept in memory).
@@ -266,13 +319,13 @@ function get_simulation_callback(; saveat, print_every_n=1000,
  
     saved_values = SavedValues(Float64, Array{Float_used_to_save, 3})
  
-    # --- Determine snapshot file numbering (continue from existing files) ---
+    # --- Determine snapshot file numbering (clean stale files, continue from valid ones) ---
     snapshot_counter = Ref(0)
     if use_disk
         mkpath(checkpoint_dir)
-        snapshot_counter[] = _count_existing_snapshots(checkpoint_dir, checkpoint_id)
+        snapshot_counter[] = _clean_and_count_snapshots(checkpoint_dir, checkpoint_id)
         if snapshot_counter[] > 0
-            println("Found $(snapshot_counter[]) existing snapshot files, continuing numbering from there.")
+            println("Found $(snapshot_counter[]) valid snapshot files, continuing numbering from there.")
         end
     end
  
@@ -482,3 +535,4 @@ function prepare_restart(T0, tspan, saveat; checkpoint_dir, checkpoint_id="lates
  
     return T0_restart, tspan_restart, saveat_restart
 end
+ 
