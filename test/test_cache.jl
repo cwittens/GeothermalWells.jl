@@ -84,6 +84,37 @@ end
     @test GeothermalWells._load_existing_snapshots(tmpdir, "test", Float32)[3] == 0
 end
 
+@testitem "snapshot file matching avoids checkpoint_id prefix collisions" begin
+    using GeothermalWells
+    using JLD2: @save
+
+    tmpdir = mktempdir()
+
+    foo_path = GeothermalWells._snapshot_path(tmpdir, "foo", 1)
+    u_save = fill(1.0f0, 2, 2, 2)
+    t_save = 1.0
+    @save foo_path u_save t_save
+
+    foo_bar_path = GeothermalWells._snapshot_path(tmpdir, "foo_bar", 1)
+    u_save = fill(2.0f0, 2, 2, 2)
+    t_save = 2.0
+    @save foo_bar_path u_save t_save
+
+    times, arrays, count = GeothermalWells._load_existing_snapshots(tmpdir, "foo", Float32)
+    @test count == 1
+    @test times == [1.0]
+    @test all(arrays[1] .== 1.0f0)
+
+    @test GeothermalWells._clean_and_count_snapshots(tmpdir, "foo") == 0
+    @test !isfile(foo_path)
+    @test isfile(foo_bar_path)
+
+    times, arrays, count = GeothermalWells._load_existing_snapshots(tmpdir, "foo_bar", Float32)
+    @test count == 1
+    @test times == [2.0]
+    @test all(arrays[1] .== 2.0f0)
+end
+
 @testitem "_clean_and_count_snapshots - removes snapshots newer than checkpoint" begin
     using GeothermalWells
     using JLD2: @save

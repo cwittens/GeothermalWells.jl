@@ -146,6 +146,18 @@ _checkpoint_path(checkpoint_dir, checkpoint_id) = joinpath(checkpoint_dir, "chec
 Return path for snapshot number `n`: `checkpoint_dir/snapshot_{id}_{NNNN}.jld2`.
 """
 _snapshot_path(checkpoint_dir, checkpoint_id, n) = joinpath(checkpoint_dir, "snapshot_$(checkpoint_id)_$(lpad(n, 4, '0')).jld2")
+
+function _is_snapshot_file(filename, checkpoint_id)
+    prefix = "snapshot_$(checkpoint_id)_"
+    suffix = ".jld2"
+
+    startswith(filename, prefix) || return false
+    endswith(filename, suffix) || return false
+
+    number_part_with_suffix = filename[nextind(filename, lastindex(prefix)):end]
+    number_part = chop(number_part_with_suffix; tail=length(suffix))
+    return !isempty(number_part) && all(isdigit, number_part)
+end
  
 """
     _load_existing_snapshots(checkpoint_dir, checkpoint_id, Float_used_to_save)
@@ -161,8 +173,7 @@ function _load_existing_snapshots(checkpoint_dir, checkpoint_id, Float_used_to_s
         return times, arrays, 0
     end
  
-    prefix = "snapshot_$(checkpoint_id)_"
-    files = filter(f -> startswith(f, prefix) && endswith(f, ".jld2"), readdir(checkpoint_dir))
+    files = filter(f -> _is_snapshot_file(f, checkpoint_id), readdir(checkpoint_dir))
     sort!(files)
  
     for f in files
@@ -195,8 +206,7 @@ function _clean_and_count_snapshots(checkpoint_dir, checkpoint_id)
         return 0
     end
  
-    prefix = "snapshot_$(checkpoint_id)_"
-    files = filter(f -> startswith(f, prefix) && endswith(f, ".jld2"), readdir(checkpoint_dir))
+    files = filter(f -> _is_snapshot_file(f, checkpoint_id), readdir(checkpoint_dir))
     sort!(files)
  
     if isempty(files)
