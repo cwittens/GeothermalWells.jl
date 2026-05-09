@@ -1,4 +1,73 @@
 """
+    AbstractMaterialAccessor
+
+Small kernel-facing abstraction for material-property lookup.
+
+`PrecomputedMaterialAccessor` stores precomputed thermal-conductivity and
+volumetric-heat-capacity arrays. `OnTheFlyMaterialAccessor` stores the borehole
+geometry and material model and evaluates the existing geometry-dependent
+material functions inside the kernel.
+"""
+abstract type AbstractMaterialAccessor end
+
+struct PrecomputedMaterialAccessor{KArr,RhoCArr} <: AbstractMaterialAccessor
+    thermal_conductivity::KArr
+    volumetric_heat_capacity::RhoCArr
+end
+
+struct OnTheFlyMaterialAccessor{B,M} <: AbstractMaterialAccessor
+    boreholes::B
+    materials::M
+end
+
+@adapt_structure PrecomputedMaterialAccessor
+@adapt_structure OnTheFlyMaterialAccessor
+
+@inline function lookup_thermal_conductivity(mat::PrecomputedMaterialAccessor, i, j, k, gridx, gridy, gridz)
+    return mat.thermal_conductivity[k, j, i]
+end
+
+@inline function lookup_volumetric_heat_capacity(mat::PrecomputedMaterialAccessor, i, j, k, gridx, gridy, gridz)
+    return mat.volumetric_heat_capacity[k, j, i]
+end
+
+@inline function lookup_thermal_conductivity(mat::OnTheFlyMaterialAccessor, i, j, k, gridx, gridy, gridz)
+    return get_thermal_conductivity(gridx[i], gridy[j], gridz[k], mat.boreholes, mat.materials)
+end
+
+@inline function lookup_volumetric_heat_capacity(mat::OnTheFlyMaterialAccessor, i, j, k, gridx, gridy, gridz)
+    return get_volumetric_heat_capacity(gridx[i], gridy[j], gridz[k], mat.boreholes, mat.materials)
+end
+
+@kernel function precompute_materials_kernel!(k_arr, rho_c_arr, @Const(gridx), @Const(gridy), @Const(gridz), boreholes, materials)
+    k, j, i = @index(Global, NTuple)
+    x, y, z = gridx[i], gridy[j], gridz[k]
+    k_arr[k, j, i] = get_thermal_conductivity(x, y, z, boreholes, materials)
+    rho_c_arr[k, j, i] = get_volumetric_heat_capacity(x, y, z, boreholes, materials)
+end
+
+
+function _material_mode(precompute_materials, N_bh)
+    if precompute_materials === :auto
+        return N_bh > 1 ? :precomputed : :on_the_fly
+
+    elseif precompute_materials == true || precompute_materials == :precomputed
+        return :precomputed
+
+    elseif precompute_materials == false ||
+           precompute_materials == :on_the_fly ||
+           precompute_materials == :onthefly
+        return :on_the_fly
+
+    else
+        throw(ArgumentError(
+            "precompute_materials must be :auto, true/false, :precomputed, or :on_the_fly"
+        ))
+    end
+end
+
+
+"""
     create_advection_index_lists(backend, gridx, gridy, gridz, boreholes)
 
 Create index lists for advection in inner and outer pipes.
@@ -49,25 +118,34 @@ function create_advection_index_lists(backend, gridx, gridy, gridz, boreholes)
     return (Idx_list_Inner, Idx_list_Outer, Idx_list, count_outer_per_bh, countxy_inner, countxy_outer, countz, u_tmp)
 end
 
-@kernel function precompute_materials_kernel!(k_arr, rho_c_arr, @Const(gridx), @Const(gridy), @Const(gridz), boreholes, materials)
-    k, j, i = @index(Global, NTuple)
-    x, y, z = gridx[i], gridy[j], gridz[k]
-    k_arr[k, j, i] = get_thermal_conductivity(x, y, z, boreholes, materials)
-    rho_c_arr[k, j, i] = get_volumetric_heat_capacity(x, y, z, boreholes, materials)
-end
-
 """
-    create_cache(; backend, gridx, gridy, gridz, materials, boreholes, inlet_model)
+    create_cache(; backend, gridx, gridy, gridz, materials, boreholes, inlet_model, precompute_materials=true)
 
-Create simulation cache with precomputed data and temporary arrays.
+Create simulation cache.
+
+By default, `precompute_materials=:auto` chooses the material evaluation mode based
+on the number of boreholes:
+
+- one borehole: use `:on_the_fly`
+- multiple boreholes: use `:precomputed`
+
+This reflects the observed performance behavior: on-the-fly material lookup is slightly
+faster for a single well, while precomputed material arrays are significantly faster
+for well arrays.
+
+You can override the automatic choice manually:
+
+- `precompute_materials=true` or `:precomputed`
+- `precompute_materials=false` or `:on_the_fly`
 
 Returns named tuple containing grids, materials, index lists, outlet temperature arrays,
-eigenvalue estimates, and precomputed `Val` types for kernel dispatch.
+eigenvalue estimates, material accessor, and precomputed `Val` types for kernel dispatch.
 """
-function create_cache(; backend, gridx, gridy, gridz, materials, boreholes, inlet_model)
+function create_cache(; backend, gridx, gridy, gridz, materials, boreholes, inlet_model, precompute_materials=:auto)
 
     Nx, Ny, Nz = length(gridx), length(gridy), length(gridz)
     N_bh = length(boreholes)
+    material_mode = _material_mode(precompute_materials, N_bh)
 
     Idx_list_Inner, Idx_list_Outer, Idx_list, count_outer_per_bh, countxy_inner, countxy_outer, countz, u_tmp = create_advection_index_lists(backend, gridx, gridy, gridz, boreholes)
 
@@ -89,8 +167,6 @@ function create_cache(; backend, gridx, gridy, gridz, materials, boreholes, inle
     Val_in_z = Val(:z)
 
     gridz_cpu = adapt(CPU(), gridz)
-    gridx_cpu = adapt(CPU(), gridx)
-    gridy_cpu = adapt(CPU(), gridy)
 
     for bh in boreholes
         if !(bh.h in gridz_cpu)
@@ -102,16 +178,20 @@ function create_cache(; backend, gridx, gridy, gridz, materials, boreholes, inle
     gridy = adapt(backend, gridy)
     gridz = adapt(backend, gridz)
 
-    Thermal_Conductivity = zeros(backend, eltype(gridx), Nz, Ny, Nx)
-    Volumetric_Heat_Capacity = zeros(backend, eltype(gridx), Nz, Ny, Nx)
-    precompute_materials_kernel!(backend)(Thermal_Conductivity, Volumetric_Heat_Capacity, gridx, gridy, gridz, boreholes, materials, ndrange=(Nz, Ny, Nx))
+    if material_mode === :precomputed
+        Thermal_Conductivity = zeros(backend, eltype(gridx), Nz, Ny, Nx)
+        Volumetric_Heat_Capacity = zeros(backend, eltype(gridx), Nz, Ny, Nx)
+        precompute_materials_kernel!(backend)(Thermal_Conductivity, Volumetric_Heat_Capacity, gridx, gridy, gridz, boreholes, materials, ndrange=(Nz, Ny, Nx))
+        material_accessor = PrecomputedMaterialAccessor(Thermal_Conductivity, Volumetric_Heat_Capacity)
+    elseif material_mode === :on_the_fly
+        material_accessor = OnTheFlyMaterialAccessor(boreholes, materials)
+    end
 
 
 
     cache = (;
         backend,
-        Thermal_Conductivity,
-        Volumetric_Heat_Capacity,
+        material_accessor,
         gridx,
         gridy,
         gridz,

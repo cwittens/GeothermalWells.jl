@@ -1,6 +1,6 @@
 module GeothermalWells
 
-using Adapt: adapt
+using Adapt: adapt, @adapt_structure
 using KernelAbstractions: @kernel, @index, @Const, @uniform, @private, @atomic, CPU, zeros
 using DiffEqCallbacks: SavedValues, SavingCallback, CallbackSet
 using MuladdMacro: @muladd
