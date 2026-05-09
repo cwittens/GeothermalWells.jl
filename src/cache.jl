@@ -49,6 +49,12 @@ function create_advection_index_lists(backend, gridx, gridy, gridz, boreholes)
     return (Idx_list_Inner, Idx_list_Outer, Idx_list, count_outer_per_bh, countxy_inner, countxy_outer, countz, u_tmp)
 end
 
+@kernel function precompute_materials_kernel!(k_arr, rho_c_arr, @Const(gridx), @Const(gridy), @Const(gridz), boreholes, materials)
+    k, j, i = @index(Global, NTuple)
+    x, y, z = gridx[i], gridy[j], gridz[k]
+    k_arr[k, j, i] = get_thermal_conductivity(x, y, z, boreholes, materials)
+    rho_c_arr[k, j, i] = get_volumetric_heat_capacity(x, y, z, boreholes, materials)
+end
 
 """
     create_cache(; backend, gridx, gridy, gridz, materials, boreholes, inlet_model)
@@ -82,14 +88,30 @@ function create_cache(; backend, gridx, gridy, gridz, materials, boreholes, inle
     Val_in_y = Val(:y)
     Val_in_z = Val(:z)
 
-    # TODO: check if h is in gridz!
+    gridz_cpu = adapt(CPU(), gridz)
+    gridx_cpu = adapt(CPU(), gridx)
+    gridy_cpu = adapt(CPU(), gridy)
+
+    for bh in boreholes
+        if !(bh.h in gridz_cpu)
+            throw(ArgumentError("Borehole depth h=$(bh.h) must be present in gridz. Use create_uniform_gridz_with_borehole_depths or include each borehole depth explicitly."))
+        end
+    end
 
     gridx = adapt(backend, gridx)
     gridy = adapt(backend, gridy)
     gridz = adapt(backend, gridz)
 
+    Thermal_Conductivity = KernelAbstractions.zeros(backend, eltype(gridx), Nz, Ny, Nx)
+    Volumetric_Heat_Capacity = KernelAbstractions.zeros(backend, eltype(gridx), Nz, Ny, Nx)
+    precompute_materials_kernel!(backend)(Thermal_Conductivity, Volumetric_Heat_Capacity, gridx, gridy, gridz, boreholes, materials, ndrange=(Nz, Ny, Nx))
+
+
+
     cache = (;
         backend,
+        Thermal_Conductivity,
+        Volumetric_Heat_Capacity,
         gridx,
         gridy,
         gridz,

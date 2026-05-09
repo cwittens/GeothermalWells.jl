@@ -21,25 +21,25 @@ functionality (`ADI_and_ADV_callback!`)—a workaround to implement operator spl
 OrdinaryDiffEq.jl framework.
 """
 function rhs_diffusion_z!(dϕ, ϕ, cache, t)
-    (; backend, gridx, gridy, gridz, Nx, Ny, Nz, Val_in_z, ValFalse, boreholes, materials) = cache
+    (; backend, gridx, gridy, gridz, Nx, Ny, Nz, Val_in_z, ValFalse, Thermal_Conductivity, Volumetric_Heat_Capacity) = cache
 
     # Diffusion in z-direction only. 
     # x and y directions handled using ADI, implemented as a  Diff eq callback
-    diffusion_1D!(backend)(dϕ, ϕ, gridx, gridy, gridz, boreholes, materials, 0, Val_in_z, ValFalse, ndrange=(Nz, Ny, Nx))
+    diffusion_1D!(backend)(dϕ, ϕ, Thermal_Conductivity, Volumetric_Heat_Capacity, gridx, gridy, gridz, 0, Val_in_z, ValFalse, ndrange=(Nz, Ny, Nx))
 
     return nothing
 end
 
 
-@kernel inbounds = true function diffusion_1D!(dϕ, @Const(ϕ), @Const(gridx), @Const(gridy), @Const(gridz), boreholes, materials, dt, direction::Val{xyz}, plus_I::Val{plus_I_bool}) where {xyz,plus_I_bool}
+@kernel inbounds = true function diffusion_1D!(dϕ, @Const(ϕ), @Const(Thermal_Conductivity), @Const(Volumetric_Heat_Capacity), @Const(gridx), @Const(gridy), @Const(gridz), dt, direction::Val{xyz}, plus_I::Val{plus_I_bool}) where {xyz,plus_I_bool}
     k, j, i = @index(Global, NTuple)
 
     @uniform half = eltype(ϕ)(0.5)
 
-    rho_c = get_volumetric_heat_capacity(gridx[i], gridy[j], gridz[k], boreholes, materials)
-    k_center = get_thermal_conductivity(gridx[i], gridy[j], gridz[k], boreholes, materials)
+    rho_c = Volumetric_Heat_Capacity[k, j, i]
+    k_center = Thermal_Conductivity[k, j, i]
 
-    idx_plus, idx_minus, Δ_plus, Δ_minus, k_plus, k_minus = idx_and_Δ_and_k_helper(i, j, k, gridx, gridy, gridz, boreholes, materials, direction)
+    idx_plus, idx_minus, Δ_plus, Δ_minus, k_plus, k_minus = idx_and_Δ_and_k_helper(i, j, k, gridx, gridy, gridz, Thermal_Conductivity, direction)
 
     ϕ_kji = ϕ[k, j, i]
 
@@ -64,7 +64,7 @@ end
 
 
 # give the correct indices, Δx and diffusion coefficients in the chosen direction
-@inline function idx_and_Δ_and_k_helper(i, j, k, gridx, gridy, gridz, boreholes, materials, ::Val{:x})
+@inline function idx_and_Δ_and_k_helper(i, j, k, gridx, gridy, gridz, Thermal_Conductivity, ::Val{:x})
     nx = length(gridx)
 
     # for von_Neumann BCs
@@ -74,13 +74,13 @@ end
     Δ_plus = (i == nx) ? (gridx[i] - gridx[i-1]) : (gridx[i+1] - gridx[i])
     Δ_minus = (i == 1) ? Δ_plus : (gridx[i] - gridx[i-1])
 
-    k_plus = get_thermal_conductivity(gridx[idx_plus[3]], gridy[j], gridz[k], boreholes, materials)
-    k_minus = get_thermal_conductivity(gridx[idx_minus[3]], gridy[j], gridz[k], boreholes, materials)
+    k_plus = Thermal_Conductivity[idx_plus...]
+    k_minus = Thermal_Conductivity[idx_minus...]
 
     return idx_plus, idx_minus, Δ_plus, Δ_minus, k_plus, k_minus
 end
 
-@inline function idx_and_Δ_and_k_helper(i, j, k, gridx, gridy, gridz, boreholes, materials, ::Val{:y})
+@inline function idx_and_Δ_and_k_helper(i, j, k, gridx, gridy, gridz, Thermal_Conductivity, ::Val{:y})
     ny = length(gridy)
 
     # for von_Neumann BCs
@@ -90,14 +90,14 @@ end
     Δ_plus = (j == ny) ? (gridy[j] - gridy[j-1]) : (gridy[j+1] - gridy[j])
     Δ_minus = (j == 1) ? Δ_plus : (gridy[j] - gridy[j-1])
 
-    k_plus = get_thermal_conductivity(gridx[i], gridy[idx_plus[2]], gridz[k], boreholes, materials)
-    k_minus = get_thermal_conductivity(gridx[i], gridy[idx_minus[2]], gridz[k], boreholes, materials)
+    k_plus = Thermal_Conductivity[idx_plus...]
+    k_minus = Thermal_Conductivity[idx_minus...]
 
 
     return idx_plus, idx_minus, Δ_plus, Δ_minus, k_plus, k_minus
 end
 
-@inline function idx_and_Δ_and_k_helper(i, j, k, gridx, gridy, gridz, boreholes, materials, ::Val{:z})
+@inline function idx_and_Δ_and_k_helper(i, j, k, gridx, gridy, gridz, Thermal_Conductivity, ::Val{:z})
     nz = length(gridz)
 
     # for von_Neumann BCs
@@ -107,13 +107,13 @@ end
     Δ_plus = (k == nz) ? (gridz[k] - gridz[k-1]) : (gridz[k+1] - gridz[k])
     Δ_minus = (k == 1) ? Δ_plus : (gridz[k] - gridz[k-1])
 
-    k_plus = get_thermal_conductivity(gridx[i], gridy[j], gridz[idx_plus[1]], boreholes, materials)
-    k_minus = get_thermal_conductivity(gridx[i], gridy[j], gridz[idx_minus[1]], boreholes, materials)
+    k_plus = Thermal_Conductivity[idx_plus...]
+    k_minus = Thermal_Conductivity[idx_minus...]
 
     return idx_plus, idx_minus, Δ_plus, Δ_minus, k_plus, k_minus
 end
 
-@kernel inbounds = true function thomas_I_minus_A!(U, RHS, gridx, gridy, gridz, dt, boreholes, materials, ::Val{N}, direction::Val{xy}) where {N,xy}
+@kernel inbounds = true function thomas_I_minus_A!(U, @Const(RHS), @Const(Thermal_Conductivity), @Const(Volumetric_Heat_Capacity), @Const(gridx), @Const(gridy), @Const(gridz), dt, ::Val{N}, direction::Val{xy}) where {N,xy}
     k, ij = @index(Global, NTuple)
 
     @uniform Float_used = eltype(RHS)
@@ -150,13 +150,13 @@ end
     # Left boundary (l=1)
     Δ_plus = grid[2] - grid[1]
     if direction == Val(:x)
-        rho_c = get_volumetric_heat_capacity(gridx[1], gridy[ij], gridz[k], boreholes, materials)
-        k_center = get_thermal_conductivity(gridx[1], gridy[ij], gridz[k], boreholes, materials)
-        k_plus = get_thermal_conductivity(gridx[2], gridy[ij], gridz[k], boreholes, materials)
+        rho_c = Volumetric_Heat_Capacity[k, ij, 1]
+        k_center = Thermal_Conductivity[k, ij, 1]
+        k_plus = Thermal_Conductivity[k, ij, 2]
     elseif direction == Val(:y)
-        rho_c = get_volumetric_heat_capacity(gridx[ij], gridy[1], gridz[k], boreholes, materials)
-        k_center = get_thermal_conductivity(gridx[ij], gridy[1], gridz[k], boreholes, materials)
-        k_plus = get_thermal_conductivity(gridx[ij], gridy[2], gridz[k], boreholes, materials)
+        rho_c = Volumetric_Heat_Capacity[k, 1, ij]
+        k_center = Thermal_Conductivity[k, 1, ij]
+        k_plus = Thermal_Conductivity[k, 2, ij]
     else
         error("Invalid direction chosen")
     end
@@ -175,15 +175,15 @@ end
         factor = -dt * 2 / (Δ_minus + Δ_plus)
 
         if direction == Val(:x)
-            rho_c = get_volumetric_heat_capacity(gridx[l], gridy[ij], gridz[k], boreholes, materials)
-            k_minus = get_thermal_conductivity(gridx[l-1], gridy[ij], gridz[k], boreholes, materials)
-            k_center = get_thermal_conductivity(gridx[l], gridy[ij], gridz[k], boreholes, materials)
-            k_plus = get_thermal_conductivity(gridx[l+1], gridy[ij], gridz[k], boreholes, materials)
+            rho_c = Volumetric_Heat_Capacity[k, ij, l]
+            k_minus = Thermal_Conductivity[k, ij, l-1]
+            k_center = Thermal_Conductivity[k, ij, l]
+            k_plus = Thermal_Conductivity[k, ij, l+1]
         else # direction == Val(:y)
-            rho_c = get_volumetric_heat_capacity(gridx[ij], gridy[l], gridz[k], boreholes, materials)
-            k_minus = get_thermal_conductivity(gridx[ij], gridy[l-1], gridz[k], boreholes, materials)
-            k_center = get_thermal_conductivity(gridx[ij], gridy[l], gridz[k], boreholes, materials)
-            k_plus = get_thermal_conductivity(gridx[ij], gridy[l+1], gridz[k], boreholes, materials)
+            rho_c = Volumetric_Heat_Capacity[k, l, ij]
+            k_minus = Thermal_Conductivity[k, l-1, ij]
+            k_center = Thermal_Conductivity[k, l, ij]
+            k_plus = Thermal_Conductivity[k, l+1, ij]
         end
 
 
@@ -195,13 +195,13 @@ end
     # Right boundary (l=N)
     Δ_minus = grid[N] - grid[N-1]
     if direction == Val(:x)
-        rho_c = get_volumetric_heat_capacity(gridx[N], gridy[ij], gridz[k], boreholes, materials)
-        k_minus = get_thermal_conductivity(gridx[N-1], gridy[ij], gridz[k], boreholes, materials)
-        k_center = get_thermal_conductivity(gridx[N], gridy[ij], gridz[k], boreholes, materials)
+        rho_c = Volumetric_Heat_Capacity[k, ij, N]
+        k_minus = Thermal_Conductivity[k, ij, N-1]
+        k_center = Thermal_Conductivity[k, ij, N]
     else # direction == Val(:y)
-        rho_c = get_volumetric_heat_capacity(gridx[ij], gridy[N], gridz[k], boreholes, materials)
-        k_minus = get_thermal_conductivity(gridx[ij], gridy[N-1], gridz[k], boreholes, materials)
-        k_center = get_thermal_conductivity(gridx[ij], gridy[N], gridz[k], boreholes, materials)
+        rho_c = Volumetric_Heat_Capacity[k, N, ij]
+        k_minus = Thermal_Conductivity[k, N-1, ij]
+        k_center = Thermal_Conductivity[k, N, ij]
     end
     # -A_i + I -> minus sign
     factor_right = -dt * half * ((k_center + k_minus) / rho_c) / (Δ_minus)^2
@@ -480,31 +480,31 @@ function ADI_and_ADV_step!(integrator, t, Δt)
     ϕ = integrator.u
     temp = integrator.uprev
 
-    (; backend, gridx, gridy, gridz, Nx, Ny, Nz, boreholes, materials,
+    (; backend, Thermal_Conductivity, Volumetric_Heat_Capacity, gridx, gridy, gridz, Nx, Ny, Nz, boreholes,
         Val_in_x, Val_in_y,
         ValTrue,
         ValNx, ValNy) = integrator.p
 
     ## ADI dt/2 with advection dt/2 step
     # Y direction explicit / (I + 0.5dt*A_y) * ϕ
-    diffusion_1D!(backend)(temp, ϕ, gridx, gridy, gridz, boreholes, materials, Δt / 2, Val_in_y, ValTrue, ndrange=(Nz, Ny, Nx))
+    diffusion_1D!(backend)(temp, ϕ, Thermal_Conductivity, Volumetric_Heat_Capacity, gridx, gridy, gridz, Δt / 2, Val_in_y, ValTrue, ndrange=(Nz, Ny, Nx))
 
     # Advection for dt/2
     advection!(temp, Δt / 2, t, integrator.p, boreholes)
 
     # X direction implicit (I - 0.5dt *  A_x) \ temp
-    thomas_I_minus_A!(backend)(ϕ, temp, gridx, gridy, gridz, Δt / 2, boreholes, materials, ValNx, Val_in_x, ndrange=(Nz, Ny))
+    thomas_I_minus_A!(backend)(ϕ, temp, Thermal_Conductivity, Volumetric_Heat_Capacity, gridx, gridy, gridz, Δt / 2, ValNx, Val_in_x, ndrange=(Nz, Ny))
 
 
     ## ADI dt/2 with advection dt/2 step
     # X direction explicit / (I + 0.5dt*A_x) * ϕ
-    diffusion_1D!(backend)(temp, ϕ, gridx, gridy, gridz, boreholes, materials, Δt / 2, Val_in_x, ValTrue, ndrange=(Nz, Ny, Nx))
+    diffusion_1D!(backend)(temp, ϕ, Thermal_Conductivity, Volumetric_Heat_Capacity, gridx, gridy, gridz, Δt / 2, Val_in_x, ValTrue, ndrange=(Nz, Ny, Nx))
 
     # Advection for dt/2
     advection!(temp, Δt / 2, t + Δt / 2, integrator.p, boreholes)
 
     # Y direction implicit (I - 0.5dt *  A_y) \ temp
-    thomas_I_minus_A!(backend)(ϕ, temp, gridx, gridy, gridz, Δt / 2, boreholes, materials, ValNy, Val_in_y, ndrange=(Nz, Nx))
+    thomas_I_minus_A!(backend)(ϕ, temp, Thermal_Conductivity, Volumetric_Heat_Capacity, gridx, gridy, gridz, Δt / 2, ValNy, Val_in_y, ndrange=(Nz, Nx))
 
     return nothing
 end
