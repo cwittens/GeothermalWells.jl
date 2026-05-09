@@ -102,8 +102,8 @@ function create_cache(; backend, gridx, gridy, gridz, materials, boreholes, inle
     gridy = adapt(backend, gridy)
     gridz = adapt(backend, gridz)
 
-    Thermal_Conductivity = KernelAbstractions.zeros(backend, eltype(gridx), Nz, Ny, Nx)
-    Volumetric_Heat_Capacity = KernelAbstractions.zeros(backend, eltype(gridx), Nz, Ny, Nx)
+    Thermal_Conductivity = zeros(backend, eltype(gridx), Nz, Ny, Nx)
+    Volumetric_Heat_Capacity = zeros(backend, eltype(gridx), Nz, Ny, Nx)
     precompute_materials_kernel!(backend)(Thermal_Conductivity, Volumetric_Heat_Capacity, gridx, gridy, gridz, boreholes, materials, ndrange=(Nz, Ny, Nx))
 
 
