@@ -4,6 +4,8 @@ GeothermalWells.jl follows [semantic versioning](https://semver.org/).
 
 ## Unreleased
 
+## v0.3.0
+
 ### Added
 - `create_cache` now accepts a `precompute_materials` keyword argument controlling how material properties are looked up inside the diffusion kernels. Accepted values: `:auto` (default; picks `:on_the_fly` for a single borehole and `:precomputed` for well arrays), `true`/`:precomputed`, or `false`/`:on_the_fly`/`:onthefly`. Precomputed material arrays are significantly faster for multi-borehole simulations; on-the-fly evaluation is slightly faster for a single well.
 - New `AbstractMaterialAccessor` interface with `PrecomputedMaterialAccessor` and `OnTheFlyMaterialAccessor` structs used internally by the diffusion kernels.
