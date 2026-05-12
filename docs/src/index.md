@@ -49,7 +49,7 @@ using OrdinaryDiffEqStabilizedRK: ODEProblem, solve, ROCK2
 using KernelAbstractions: CPU
 
 # Define material properties
-materials = HomogenousMaterialProperties{Float64}(
+materials = HomogenousMaterialProperties(
     2.88,    # k_rock [W/(m·K)]
     2.17e6,  # rho_c_rock [J/(m³·K)]
     0.6,     # k_water [W/(m·K)]
@@ -63,7 +63,7 @@ materials = HomogenousMaterialProperties{Float64}(
 )
 
 # Define borehole geometry
-borehole = Borehole{Float64}(
+borehole = Borehole(
     0.0, 0.0,    # center position (x, y) [m]
     2000.0,      # depth [m]
     0.0381,      # inner pipe radius [m]
@@ -78,21 +78,21 @@ borehole = Borehole{Float64}(
 # Create grids
 gridx = create_adaptive_grid_1d(xmin=-100.0, xmax=100.0, dx_fine=0.0025,
     growth_factor=1.3, dx_max=10.0, boreholes=(borehole,),
-    backend=CPU(), Float_used=Float64, direction=:x)
+    backend=CPU(), direction=:x)
 gridy = create_adaptive_grid_1d(xmin=-100.0, xmax=100.0, dx_fine=0.0025,
     growth_factor=1.3, dx_max=10.0, boreholes=(borehole,),
-    backend=CPU(), Float_used=Float64, direction=:y)
+    backend=CPU(), direction=:y)
 gridz = create_uniform_gridz_with_borehole_depths(zmin=0.0, zmax=2200.0,
     dz=100.0, boreholes=(borehole,), backend=CPU())
 
 # Initial temperature with geothermal gradient
-T0 = initial_condition_thermal_gradient(CPU(), Float64, gridx, gridy, gridz;
+T0 = initial_condition_thermal_gradient(CPU(), gridx, gridy, gridz;
     T_surface=10.0, gradient=0.03)
 
 # Create cache and solve
 cache = create_cache(backend=CPU(), gridx=gridx, gridy=gridy, gridz=gridz,
     materials=materials, boreholes=(borehole,),
-    inlet_model=ConstantInlet{Float64}(20.0))
+    inlet_model=ConstantInlet(20.0))
 
 callback, saved_values = get_simulation_callback(saveat=[0.0, 3600.0])
 

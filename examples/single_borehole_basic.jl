@@ -8,12 +8,11 @@ using KernelAbstractions: CPU
 
 # Choose backend: CPU() for testing, or CUDABackend()/ROCBackend() for GPU
 backend = CPU()
-Float_used = Float64
 
 # =============================================================================
 # Material properties (homogeneous rock)
 # =============================================================================
-materials = HomogenousMaterialProperties{Float_used}(
+materials = HomogenousMaterialProperties(
     2.88,       # k_rock [W/(m·K)]
     2.17e6,     # rho_c_rock [J/(m³·K)]
     0.6,        # k_water [W/(m·K)]
@@ -31,7 +30,7 @@ materials = HomogenousMaterialProperties{Float_used}(
 # =============================================================================
 # Deep coaxial borehole heat exchanger (350m depth) shallow to make it faster to simulate on CPU
 # Inner pipe is insulated down to 1000m to reduce thermal short-circuiting
-borehole = Borehole{Float_used}(
+borehole = Borehole(
     0.0,             # xc [m]
     0.0,             # yc [m]
     350.0,          # h - borehole depth [m]
@@ -64,13 +63,13 @@ dz = 10.0            # vertical spacing [m]
 gridx = create_adaptive_grid_1d(
     xmin=xmin, xmax=xmax,
     dx_fine=dx_fine, growth_factor=growth_factor, dx_max=dx_max,
-    boreholes=boreholes, backend=backend, Float_used=Float_used, direction=:x
+    boreholes=boreholes, backend=backend, direction=:x
 )
 
 gridy = create_adaptive_grid_1d(
     xmin=ymin, xmax=ymax,
     dx_fine=dx_fine, growth_factor=growth_factor, dx_max=dx_max,
-    boreholes=boreholes, backend=backend, Float_used=Float_used, direction=:y
+    boreholes=boreholes, backend=backend, direction=:y
 )
 
 gridz = create_uniform_gridz_with_borehole_depths(zmin=zmin, zmax=zmax, dz=dz, boreholes=boreholes, backend=backend)
@@ -82,9 +81,9 @@ println("Grid size: $(length(gridx)) x $(length(gridy)) x $(length(gridz))")
 # =============================================================================
 # Linear thermal gradient: T(z) = T_surface + gradient * z
 T0 = initial_condition_thermal_gradient(
-    backend, Float_used, gridx, gridy, gridz;
+    backend, gridx, gridy, gridz;
     T_surface=2.29,   # surface temperature [°C]
-    gradient=0.35     # thermal gradient [K/m] (10x higher than typical to speed 
+    gradient=0.35     # thermal gradient [K/m] (10x higher than typical to speed
                       # up testing on CPU, by needing smaller zmax)
 );
 
@@ -93,7 +92,7 @@ T0 = initial_condition_thermal_gradient(
 # Inlet model
 # =============================================================================
 # Constant inlet temperature of 20°C
-inlet_model = ConstantInlet{Float_used}(20.0)
+inlet_model = ConstantInlet(20.0)
 
 # =============================================================================
 # Create simulation cache
@@ -124,7 +123,7 @@ callback, saved_values = get_simulation_callback(
 )
 
 # Time step and solver
-Δt = 80.0  # [s]
+Δt = 160.0  # [s]
 
 println("Simulating with Δt = $(Δt)s")
 

@@ -4,6 +4,14 @@ GeothermalWells.jl follows [semantic versioning](https://semver.org/).
 
 ## Unreleased
 
+### Added
+- `create_cache` now accepts a `precompute_materials` keyword argument controlling how material properties are looked up inside the diffusion kernels. Accepted values: `:auto` (default; picks `:on_the_fly` for a single borehole and `:precomputed` for well arrays), `true`/`:precomputed`, or `false`/`:on_the_fly`/`:onthefly`. Precomputed material arrays are significantly faster for multi-borehole simulations; on-the-fly evaluation is slightly faster for a single well.
+- New `AbstractMaterialAccessor` interface with `PrecomputedMaterialAccessor` and `OnTheFlyMaterialAccessor` structs used internally by the diffusion kernels.
+- `Float_used` is now optional and defaults to `Float64`:
+  - `create_adaptive_grid_1d(...; Float_used=Float64, ...)` (was a required keyword argument).
+  - `initial_condition_thermal_gradient(backend, gridx, gridy, gridz; T_surface, gradient, Float_used=Float64)` — new 4-positional form. The legacy 5-positional form `initial_condition_thermal_gradient(backend, Float_used, gridx, gridy, gridz; ...)` is kept for backward compatibility.
+  - `Borehole(xc, yc, h, r_inner, t_inner, r_outer, t_outer, r_backfill, ṁ, insulation_depth)` — outer constructor defaulting to `Float64`. `Borehole{T}(...)` still works for any `T<:Real`.
+
 ## v0.2.1
 
 ### Changed

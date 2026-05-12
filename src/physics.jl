@@ -60,6 +60,10 @@ struct Borehole{RealT<:Real} <: AbstractBorehole{RealT}
     end
 end
 
+# Convenience outer constructor defaulting to Float64.
+Borehole(xc, yc, h, r_inner, t_inner, r_outer, t_outer, r_backfill, ṁ, insulation_depth) =
+    Borehole{Float64}(xc, yc, h, r_inner, t_inner, r_outer, t_outer, r_backfill, ṁ, insulation_depth)
+
 
 """
     StratifiedMaterialProperties{N,T}
@@ -323,22 +327,33 @@ end
 
 
 """
+    initial_condition_thermal_gradient(backend, gridx, gridy, gridz; T_surface, gradient, Float_used=Float64)
     initial_condition_thermal_gradient(backend, Float_used, gridx, gridy, gridz; T_surface, gradient)
 
 Create initial temperature field with linear thermal gradient.
 
 Returns 3D array with `T(z) = T_surface + gradient * z` where `T_surface` is surface
 temperature [°C] and `gradient` is thermal gradient [K/m or °C/m].
+
+`Float_used` defaults to `Float64`. The legacy 5-argument form (with `Float_used` as the
+second positional argument) is kept for backward compatibility.
 """
-function initial_condition_thermal_gradient(backend, Float_used, gridx, gridy, gridz;
-                                           T_surface, gradient)
+function initial_condition_thermal_gradient(backend, gridx, gridy, gridz;
+                                            T_surface, gradient, Float_used=Float64)
     Nx, Ny, Nz = length(gridx), length(gridy), length(gridz)
     ϕ = zeros(backend, Float_used, Nz, Ny, Nx)
-    
+
     kernel_thermal_gradient!(backend)(ϕ, gridz, T_surface, gradient,
                                      ndrange=(Nz, Ny, Nx))
-    
+
     return ϕ
+end
+
+# Backward-compatible signature: Float_used as the 2nd positional argument.
+function initial_condition_thermal_gradient(backend, Float_used::Type, gridx, gridy, gridz;
+                                            T_surface, gradient)
+    return initial_condition_thermal_gradient(backend, gridx, gridy, gridz;
+                                              T_surface, gradient, Float_used)
 end
 
 @kernel function kernel_thermal_gradient!(ϕ, @Const(gridz), T_surface, gradient)

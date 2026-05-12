@@ -49,7 +49,7 @@ end
 
 
 """
-    create_adaptive_grid_1d(; xmin, xmax, dx_fine, growth_factor, dx_max, boreholes, backend, Float_used, direction)
+    create_adaptive_grid_1d(; xmin, xmax, dx_fine, growth_factor, dx_max, boreholes, backend, direction, Float_used=Float64)
 
 Generate a non-uniform 1D grid with refined spacing around one or multiple boreholes.
 
@@ -64,8 +64,8 @@ for both single borehole and multi-borehole configurations.
 - `dx_max`: Maximum grid spacing [m]
 - `boreholes`: Single borehole or collection of borehole objects with positions and radii
 - `backend`: Computation backend (CPU/GPU) for array adaptation
-- `Float_used`: Floating point type for grid values
 - `direction`: Grid direction, either `:x` or `:y`
+- `Float_used=Float64`: Floating point type for grid values
 
 # Grid generation strategy
 For single or multiple boreholes:
@@ -77,7 +77,7 @@ For single or multiple boreholes:
 # Returns
 Backend-adapted 1D grid array of the specified floating point type.
 """
-function create_adaptive_grid_1d(; xmin, xmax, dx_fine, growth_factor, dx_max, boreholes, backend, Float_used, direction)
+function create_adaptive_grid_1d(; xmin, xmax, dx_fine, growth_factor, dx_max, boreholes, backend, direction, Float_used=Float64)
 
     if direction == :x
         perm = sortperm([bh.xc for bh in boreholes])
