@@ -21,18 +21,15 @@ using KernelAbstractions: CPU
 
 # Choose backend: CPU() for testing, CUDABackend() for NVIDIA GPU
 backend = CPU()
-Float_used = Float64
 ```
 
-!!! warning "Use Float64"
-    Using `Float32` can cause numerical instabilities in some cases. It is recommended to use `Float64` for reliable results.
 
 ### Material Properties
 
 Define thermal properties for all materials in the simulation:
 
 ```julia
-materials = HomogenousMaterialProperties{Float_used}(
+materials = HomogenousMaterialProperties(
     2.88,       # k_rock - rock thermal conductivity [W/(m·K)]
     2.17e6,     # rho_c_rock - rock volumetric heat capacity [J/(m³·K)]
     0.6,        # k_water [W/(m·K)]
@@ -53,7 +50,7 @@ For layered rock formations, use [`StratifiedMaterialProperties`](@ref) instead.
 Define the coaxial borehole heat exchanger geometry:
 
 ```julia
-borehole = Borehole{Float_used}(
+borehole = Borehole(
     0.0,             # xc - x-coordinate of center [m]
     0.0,             # yc - y-coordinate of center [m]
     2000.0,          # h - borehole depth [m]
@@ -88,13 +85,13 @@ dz = 100.0            # vertical spacing [m]
 gridx = create_adaptive_grid_1d(
     xmin=xmin, xmax=xmax,
     dx_fine=dx_fine, growth_factor=growth_factor, dx_max=dx_max,
-    boreholes=boreholes, backend=backend, Float_used=Float_used, direction=:x
+    boreholes=boreholes, backend=backend, direction=:x
 )
 
 gridy = create_adaptive_grid_1d(
     xmin=ymin, xmax=ymax,
     dx_fine=dx_fine, growth_factor=growth_factor, dx_max=dx_max,
-    boreholes=boreholes, backend=backend, Float_used=Float_used, direction=:y
+    boreholes=boreholes, backend=backend, direction=:y
 )
 
 gridz = create_uniform_gridz_with_borehole_depths(
@@ -111,7 +108,7 @@ Set the initial temperature field with a geothermal gradient:
 
 ```julia
 T0 = initial_condition_thermal_gradient(
-    backend, Float_used, gridx, gridy, gridz;
+    backend, gridx, gridy, gridz;
     T_surface=10.0,    # surface temperature [°C]
     gradient=0.03      # thermal gradient [K/m]
 )
@@ -123,10 +120,10 @@ Choose how the inlet temperature is determined:
 
 ```julia
 # Option 1: Constant inlet temperature
-inlet_model = ConstantInlet{Float_used}(20.0)  # 20°C
+inlet_model = ConstantInlet(20.0)  # 20°C
 
 # Option 2: Heat exchanger (inlet = outlet - ΔT)
-# inlet_model = HeatExchangerInlet{Float_used}(5.0)  # ΔT = 5K
+# inlet_model = HeatExchangerInlet(5.0)  # ΔT = 5K
 ```
 
 ### Create Cache and Solve
@@ -176,7 +173,7 @@ For long-running simulations that may be interrupted, pass `checkpoint_dir` and 
 checkpoint_dir = joinpath(@__DIR__, "simulation_data")
 checkpoint_id = splitext(basename(@__FILE__))[1]
 
-T0_fresh = initial_condition_thermal_gradient(backend, Float_used, gridx, gridy, gridz;
+T0_fresh = initial_condition_thermal_gradient(backend, gridx, gridy, gridz;
     T_surface=10.0, gradient=0.03)
 tspan_full = (0.0, 3600.0 * 24 * 365 * 20)
 saveat_full = range(tspan_full..., 21)
@@ -222,7 +219,7 @@ To simulate multiple boreholes, create a tuple of [`Borehole`](@ref) objects:
 ```julia
 # 3x3 array with 30m spacing
 boreholes = tuple(
-    (Borehole{Float_used}(
+    (Borehole(
         xc, yc,          # center coordinates
         2000.0,          # depth
         # ... other parameters

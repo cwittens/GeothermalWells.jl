@@ -32,8 +32,8 @@ using OrdinaryDiffEqStabilizedRK: ODEProblem, solve, ROCK2
 using KernelAbstractions: CPU
 
 # Set up material properties and borehole geometry
-materials = HomogenousMaterialProperties{Float64}(...)
-borehole = Borehole{Float64}(...)
+materials = HomogenousMaterialProperties(...)
+borehole = Borehole(...)
 
 # Create adaptive grids
 gridx = create_adaptive_grid_1d(...)
@@ -41,12 +41,12 @@ gridy = create_adaptive_grid_1d(...)
 gridz = create_uniform_gridz_with_borehole_depths(...)
 
 # Initial temperature field with geothermal gradient
-T0 = initial_condition_thermal_gradient(backend, Float64, gridx, gridy, gridz;
+T0 = initial_condition_thermal_gradient(backend, gridx, gridy, gridz;
     T_surface=2.29, gradient=0.035)
 
 # Create simulation and solve
 cache = create_cache(backend=CPU(), gridx=gridx, gridy=gridy, gridz=gridz,
-    materials=materials, boreholes=(borehole,), inlet_model=ConstantInlet{Float64}(20.0))
+    materials=materials, boreholes=(borehole,), inlet_model=ConstantInlet(20.0))
 prob = ODEProblem(rhs_diffusion_z!, T0, (0.0, 3600.0), cache)
 callback, saved_values = get_simulation_callback(...)
 solve(prob, ROCK2(), dt=60.0, callback=callback)
