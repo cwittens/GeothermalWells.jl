@@ -4,8 +4,7 @@ using OrdinaryDiffEqStabilizedRK: ODEProblem, solve, ROCK2
 using KernelAbstractions: CPU
 
 # Choose backend: CPU() for testing, CUDABackend() for NVIDIA GPU
-backend = CPU()
-Float_used = Float64</code></pre><div class="admonition is-warning" id="Use-Float64-58829315ecbeb128"><header class="admonition-header">Use Float64<a class="admonition-anchor" href="#Use-Float64-58829315ecbeb128" title="Permalink"></a></header><div class="admonition-body"><p>Using <code>Float32</code> can cause numerical instabilities in some cases. It is recommended to use <code>Float64</code> for reliable results.</p></div></div><h3 id="Material-Properties"><a class="docs-heading-anchor" href="#Material-Properties">Material Properties</a><a id="Material-Properties-1"></a><a class="docs-heading-anchor-permalink" href="#Material-Properties" title="Permalink"></a></h3><p>Define thermal properties for all materials in the simulation:</p><pre><code class="language-julia hljs">materials = HomogenousMaterialProperties{Float_used}(
+backend = CPU()</code></pre><h3 id="Material-Properties"><a class="docs-heading-anchor" href="#Material-Properties">Material Properties</a><a id="Material-Properties-1"></a><a class="docs-heading-anchor-permalink" href="#Material-Properties" title="Permalink"></a></h3><p>Define thermal properties for all materials in the simulation:</p><pre><code class="language-julia hljs">materials = HomogenousMaterialProperties(
     2.88,       # k_rock - rock thermal conductivity [W/(m·K)]
     2.17e6,     # rho_c_rock - rock volumetric heat capacity [J/(m³·K)]
     0.6,        # k_water [W/(m·K)]
@@ -16,7 +15,7 @@ Float_used = Float64</code></pre><div class="admonition is-warning" id="Use-Floa
     1.96e6,     # rho_c_insulating [J/(m³·K)]
     1.0,        # k_backfill [W/(m·K)]
     1.0         # rho_c_backfill [J/(m³·K)]
-)</code></pre><p>For layered rock formations, use <a href="../reference/#GeothermalWells.StratifiedMaterialProperties"><code>StratifiedMaterialProperties</code></a> instead.</p><h3 id="Borehole-Geometry"><a class="docs-heading-anchor" href="#Borehole-Geometry">Borehole Geometry</a><a id="Borehole-Geometry-1"></a><a class="docs-heading-anchor-permalink" href="#Borehole-Geometry" title="Permalink"></a></h3><p>Define the coaxial borehole heat exchanger geometry:</p><pre><code class="language-julia hljs">borehole = Borehole{Float_used}(
+)</code></pre><p>For layered rock formations, use <a href="../reference/#GeothermalWells.StratifiedMaterialProperties"><code>StratifiedMaterialProperties</code></a> instead.</p><h3 id="Borehole-Geometry"><a class="docs-heading-anchor" href="#Borehole-Geometry">Borehole Geometry</a><a id="Borehole-Geometry-1"></a><a class="docs-heading-anchor-permalink" href="#Borehole-Geometry" title="Permalink"></a></h3><p>Define the coaxial borehole heat exchanger geometry:</p><pre><code class="language-julia hljs">borehole = Borehole(
     0.0,             # xc - x-coordinate of center [m]
     0.0,             # yc - y-coordinate of center [m]
     2000.0,          # h - borehole depth [m]
@@ -43,13 +42,13 @@ dz = 100.0            # vertical spacing [m]
 gridx = create_adaptive_grid_1d(
     xmin=xmin, xmax=xmax,
     dx_fine=dx_fine, growth_factor=growth_factor, dx_max=dx_max,
-    boreholes=boreholes, backend=backend, Float_used=Float_used, direction=:x
+    boreholes=boreholes, backend=backend, direction=:x
 )
 
 gridy = create_adaptive_grid_1d(
     xmin=ymin, xmax=ymax,
     dx_fine=dx_fine, growth_factor=growth_factor, dx_max=dx_max,
-    boreholes=boreholes, backend=backend, Float_used=Float_used, direction=:y
+    boreholes=boreholes, backend=backend, direction=:y
 )
 
 gridz = create_uniform_gridz_with_borehole_depths(
@@ -58,14 +57,14 @@ gridz = create_uniform_gridz_with_borehole_depths(
 )
 
 println(&quot;Grid size: $(length(gridx)) x $(length(gridy)) x $(length(gridz))&quot;)</code></pre><h3 id="Initial-Condition"><a class="docs-heading-anchor" href="#Initial-Condition">Initial Condition</a><a id="Initial-Condition-1"></a><a class="docs-heading-anchor-permalink" href="#Initial-Condition" title="Permalink"></a></h3><p>Set the initial temperature field with a geothermal gradient:</p><pre><code class="language-julia hljs">T0 = initial_condition_thermal_gradient(
-    backend, Float_used, gridx, gridy, gridz;
+    backend, gridx, gridy, gridz;
     T_surface=10.0,    # surface temperature [°C]
     gradient=0.03      # thermal gradient [K/m]
 )</code></pre><h3 id="Inlet-Model"><a class="docs-heading-anchor" href="#Inlet-Model">Inlet Model</a><a id="Inlet-Model-1"></a><a class="docs-heading-anchor-permalink" href="#Inlet-Model" title="Permalink"></a></h3><p>Choose how the inlet temperature is determined:</p><pre><code class="language-julia hljs"># Option 1: Constant inlet temperature
-inlet_model = ConstantInlet{Float_used}(20.0)  # 20°C
+inlet_model = ConstantInlet(20.0)  # 20°C
 
 # Option 2: Heat exchanger (inlet = outlet - ΔT)
-# inlet_model = HeatExchangerInlet{Float_used}(5.0)  # ΔT = 5K</code></pre><h3 id="Create-Cache-and-Solve"><a class="docs-heading-anchor" href="#Create-Cache-and-Solve">Create Cache and Solve</a><a id="Create-Cache-and-Solve-1"></a><a class="docs-heading-anchor-permalink" href="#Create-Cache-and-Solve" title="Permalink"></a></h3><pre><code class="language-julia hljs">cache = create_cache(
+# inlet_model = HeatExchangerInlet(5.0)  # ΔT = 5K</code></pre><h3 id="Create-Cache-and-Solve"><a class="docs-heading-anchor" href="#Create-Cache-and-Solve">Create Cache and Solve</a><a id="Create-Cache-and-Solve-1"></a><a class="docs-heading-anchor-permalink" href="#Create-Cache-and-Solve" title="Permalink"></a></h3><pre><code class="language-julia hljs">cache = create_cache(
     backend=backend,
     gridx=gridx,
     gridy=gridy,
@@ -101,7 +100,7 @@ solve(
 )</code></pre><h2 id="Checkpointing-and-Restart"><a class="docs-heading-anchor" href="#Checkpointing-and-Restart">Checkpointing and Restart</a><a id="Checkpointing-and-Restart-1"></a><a class="docs-heading-anchor-permalink" href="#Checkpointing-and-Restart" title="Permalink"></a></h2><p>For long-running simulations that may be interrupted, pass <code>checkpoint_dir</code> and <code>checkpoint_id</code> to enable fault-tolerant checkpointing. Use <a href="../reference/#GeothermalWells.prepare_restart"><code>prepare_restart</code></a> at the top and <a href="../reference/#GeothermalWells.reload_snapshots!"><code>reload_snapshots!</code></a> at the bottom, and the same script can be resubmitted without changes:</p><pre><code class="language-julia hljs">checkpoint_dir = joinpath(@__DIR__, &quot;simulation_data&quot;)
 checkpoint_id = splitext(basename(@__FILE__))[1]
 
-T0_fresh = initial_condition_thermal_gradient(backend, Float_used, gridx, gridy, gridz;
+T0_fresh = initial_condition_thermal_gradient(backend, gridx, gridy, gridz;
     T_surface=10.0, gradient=0.03)
 tspan_full = (0.0, 3600.0 * 24 * 365 * 20)
 saveat_full = range(tspan_full..., 21)
@@ -129,9 +128,9 @@ backend = CUDABackend()
 
 # All other code remains the same!</code></pre><h2 id="Well-Arrays"><a class="docs-heading-anchor" href="#Well-Arrays">Well Arrays</a><a id="Well-Arrays-1"></a><a class="docs-heading-anchor-permalink" href="#Well-Arrays" title="Permalink"></a></h2><p>To simulate multiple boreholes, create a tuple of <a href="../reference/#GeothermalWells.Borehole"><code>Borehole</code></a> objects:</p><pre><code class="language-julia hljs"># 3x3 array with 30m spacing
 boreholes = tuple(
-    (Borehole{Float_used}(
+    (Borehole(
         xc, yc,          # center coordinates
         2000.0,          # depth
         # ... other parameters
     ) for xc in [-30.0, 0.0, 30.0], yc in [-30.0, 0.0, 30.0])...
-)</code></pre><h2 id="Next-Steps"><a class="docs-heading-anchor" href="#Next-Steps">Next Steps</a><a id="Next-Steps-1"></a><a class="docs-heading-anchor-permalink" href="#Next-Steps" title="Permalink"></a></h2><ul><li>See the <a href="../reference/#api-reference">API Reference</a> for detailed documentation</li><li>Check the <code>examples/</code> folder:<ul><li><code>single_borehole_basic.jl</code> - Single borehole simulation</li><li><code>well_array_basic.jl</code> - Multi-well array simulation</li></ul></li><li>See the <a href="https://github.com/cwittens/2026_DBHEs_Arrays">reproducibility repository</a> for advanced examples reproducing results from literature (Li et al. (2021), Hu et al. (2020), Brown et al. (2023))</li></ul></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../methodology/">« Methodology</a><a class="docs-footer-nextpage" href="../changelog/">Changelog »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.17.0 on <span class="colophon-date" title="Tuesday 12 May 2026 16:25">Tuesday 12 May 2026</span>. Using Julia version 1.12.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+)</code></pre><h2 id="Next-Steps"><a class="docs-heading-anchor" href="#Next-Steps">Next Steps</a><a id="Next-Steps-1"></a><a class="docs-heading-anchor-permalink" href="#Next-Steps" title="Permalink"></a></h2><ul><li>See the <a href="../reference/#api-reference">API Reference</a> for detailed documentation</li><li>Check the <code>examples/</code> folder:<ul><li><code>single_borehole_basic.jl</code> - Single borehole simulation</li><li><code>well_array_basic.jl</code> - Multi-well array simulation</li></ul></li><li>See the <a href="https://github.com/cwittens/2026_DBHEs_Arrays">reproducibility repository</a> for advanced examples reproducing results from literature (Li et al. (2021), Hu et al. (2020), Brown et al. (2023))</li></ul></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../methodology/">« Methodology</a><a class="docs-footer-nextpage" href="../changelog/">Changelog »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.17.0 on <span class="colophon-date" title="Tuesday 12 May 2026 16:41">Tuesday 12 May 2026</span>. Using Julia version 1.12.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
