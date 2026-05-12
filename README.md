@@ -49,7 +49,7 @@ cache = create_cache(backend=CPU(), gridx=gridx, gridy=gridy, gridz=gridz,
     materials=materials, boreholes=(borehole,), inlet_model=ConstantInlet(20.0))
 prob = ODEProblem(rhs_diffusion_z!, T0, (0.0, 3600.0), cache)
 callback, saved_values = get_simulation_callback(...)
-solve(prob, ROCK2(), dt=60.0, callback=callback)
+solve(prob, ROCK2(), dt=120.0, callback=callback)
 ```
 
 See the [examples/](examples/) folder for complete working examples.
