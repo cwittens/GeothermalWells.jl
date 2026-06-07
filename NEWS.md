@@ -4,9 +4,13 @@ GeothermalWells.jl follows [semantic versioning](https://semver.org/).
 
 ## Unreleased
 
+## v0.3.1
+
 ### Added
 - Added Brown et al. validation data loaders for Figure 6 array cases: `data_brown_array(spacing, i)`  
-- `data_brown_single_well_c` had the wrong name and is now `data_brown_single_well_d`, but `data_brown_single_well_c` is still there for legacy-compatible.
+
+### Changed
+- `data_brown_single_well_c` had the wrong name and is now `data_brown_single_well_d` (but `data_brown_single_well_c` is still there for legacy-compatible)
 
 ## v0.3.0
 
