@@ -68,5 +68,6 @@ Functions for loading reference data from published studies:
 data_li
 data_hu
 data_brown_single_well_b
-data_brown_single_well_c
+data_brown_single_well_d
+data_brown_array
 ```
