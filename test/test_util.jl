@@ -55,6 +55,38 @@ end
     @test T3[1] ≈ 39.67813488135304
 end
 
+@testitem "data_brown_array" begin
+    using GeothermalWells
+
+    # spacing=20, i=1: array_20m_300m.csv
+    x1, T1 = data_brown_array(20, 1)
+    @test length(x1) == 39
+    @test length(T1) == length(x1)
+    @test isapprox(x1[1], -194.2540244866163)
+    @test isapprox(T1[1], 18.955852627455137)
+    @test isapprox(x1[end], 185.96650614414978)
+    @test isapprox(T1[end], 18.955852627455137)
+
+    # spacing=50, i=3: array_50m_920m.csv
+    x2, T2 = data_brown_array(50, 3)
+    @test length(x2) == 125
+    @test length(T2) == length(x2)
+    @test isapprox(x2[1], -190.5152139939379)
+    @test isapprox(T2[1], 39.68146727720959)
+    @test isapprox(x2[end], 196.55613700855383)
+    @test isapprox(T2[end], 39.68146727720959)
+
+    # All supported spacing/depth combinations should load paired vectors.
+    for spacing in (20, 30, 40, 50), i in 1:3
+        x, T = data_brown_array(spacing, i)
+        @test length(x) == length(T)
+        @test !isempty(x)
+    end
+
+    @test_throws ArgumentError data_brown_array(10, 1)
+    @test_throws ArgumentError data_brown_array(20, 4)
+end
+
 @testitem "data_hu" begin
     using GeothermalWells
 
