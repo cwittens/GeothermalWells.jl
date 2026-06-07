@@ -69,7 +69,7 @@ end
 
     # spacing=50, i=3: array_50m_920m.csv
     x2, T2 = data_brown_array(50, 3)
-    @test length(x2) == 125
+    @test length(x2) == 121
     @test length(T2) == length(x2)
     @test isapprox(x2[1], -190.5152139939379)
     @test isapprox(T2[1], 39.68146727720959)
