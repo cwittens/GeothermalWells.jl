@@ -1,1 +1,2 @@
 Data taken from <https://doi.org/10.1016/j.renene.2021.01.036>
+Figure 5

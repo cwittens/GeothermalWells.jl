@@ -50,14 +50,14 @@ function data_brown_single_well_b()
 end
 
 """
-    data_brown_single_well_c(i) -> x_data, T_data
+    data_brown_single_well_d(i) -> x_data, T_data
 
-Load Brown et al. single well validation data (Figure 4c).
+Load Brown et al. single well validation data (Figure 4d).
 
 `i=1,2,3` for 300m, 600m, 920m depths respectively.
 From: doi:10.1016/j.renene.2021.01.036
 """
-function data_brown_single_well_c(i)
+function data_brown_single_well_d(i)
     # data scrapped from paper:
     # Investigating scalability of deep borehole heat exchangers: Numerical modelling of arrays with varied modes of operation
     # https://doi.org/10.1016/j.renene.2021.01.036
@@ -67,6 +67,50 @@ function data_brown_single_well_c(i)
 
 
     data_path = joinpath(path_li, csv_names[i])
+    data = readdlm(data_path, ','; header=false)
+
+    x_data = data[:, 1]
+    T_data = data[:, 2]
+
+    return x_data, T_data
+end
+
+"""
+    data_brown_single_well_c(i) -> x_data, T_data
+
+Compatibility alias for [`data_brown_single_well_d`](@ref).
+
+Note: this data is from Figure 4d, not Figure 4c.
+This is a legacy function kept for backward compatibility.
+"""
+data_brown_single_well_c(i) = data_brown_single_well_d(i)
+
+"""
+    data_brown_array(spacing, i) -> x_data, T_data
+
+Load Brown et al. array validation data (Figure 6).
+
+`spacing=20,30,40,50` for array spacing in meters.
+`i=1,2,3` for 300m, 600m, 920m depths respectively.
+From: doi:10.1016/j.renene.2021.01.036
+"""
+function data_brown_array(spacing, i)
+    # data scrapped from paper:
+    # Investigating scalability of deep borehole heat exchangers: Numerical modelling of arrays with varied modes of operation
+    # https://doi.org/10.1016/j.renene.2021.01.036
+    # Figure 6
+    if !(spacing in (20, 30, 40, 50))
+        throw(ArgumentError("spacing must be one of 20, 30, 40, or 50"))
+    end
+
+    depth_names = ["300m", "600m", "920m"]
+    if !(1 <= i <= length(depth_names))
+        throw(ArgumentError("i must be 1, 2, or 3 for 300m, 600m, or 920m depths"))
+    end
+
+    spacing_m = Int(spacing)
+    path_brown = joinpath(data_dir(), "Brown_et_al")
+    data_path = joinpath(path_brown, "array_$(spacing_m)m_$(depth_names[i]).csv")
     data = readdlm(data_path, ','; header=false)
 
     x_data = data[:, 1]
