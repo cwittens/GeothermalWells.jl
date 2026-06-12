@@ -118,37 +118,22 @@ end
     return idx_plus, idx_minus, Δ_plus, Δ_minus, k_plus, k_minus
 end
 
-@kernel inbounds = true function thomas_I_minus_A!(U, @Const(RHS), material_accessor, @Const(gridx), @Const(gridy), @Const(gridz), dt, ::Val{N}, direction::Val{xy}) where {N,xy}
-    k, ij = @index(Global, NTuple)
-
-    @uniform Float_used = eltype(RHS)
-    @uniform half = Float_used(0.5)
-    @uniform one = 1
-
-    # private memory
-    b = @private Float_used (N,) # Ax = b <- this b
-    lower = @private Float_used (N,) # subdiagonal of A / solution vector x later
-    diagonal = @private Float_used (N,) # main diagonal of A
-    upper = @private Float_used (N - 1,) # superdiagonal of A
-
-
+# Build the tridiagonal matrix (I - dt*A) for one grid line.
+# `lower`, `diagonal`, `upper` are per-thread scratch arrays filled in place.
+# Shared by `thomas_I_minus_A!` (per-step build) and `thomas_precompute_factors!`
+# (one-time build), so both produce bit-identical coefficients.
+@inline function build_thomas_matrix!(lower, diagonal, upper, material_accessor, gridx, gridy, gridz, dt, k, ij, ::Val{N}, direction::Val{xy}) where {N,xy}
+    Float_used = eltype(diagonal)
+    half = Float_used(0.5)
+    one = 1
 
     if direction == Val(:x)
         grid = gridx
-        # load RHS into b
-        for l in 1:N
-            b[l] = RHS[k, ij, l]
-        end
     elseif direction == Val(:y)
         grid = gridy
-        # load RHS into b
-        for l in 1:N
-            b[l] = RHS[k, l, ij]
-        end
     else
         error("Invalid direction chosen")
     end
-
 
     # Build Matrix A
 
@@ -214,6 +199,33 @@ end
     lower[N-1] = factor_right
     diagonal[N] = -factor_right + one
 
+    return nothing
+end
+
+@kernel inbounds = true function thomas_I_minus_A!(U, @Const(RHS), material_accessor, @Const(gridx), @Const(gridy), @Const(gridz), dt, valN::Val{N}, direction::Val{xy}) where {N,xy}
+    k, ij = @index(Global, NTuple)
+
+    @uniform Float_used = eltype(RHS)
+
+    # private memory
+    b = @private Float_used (N,) # Ax = b <- this b
+    lower = @private Float_used (N,) # subdiagonal of A / solution vector x later
+    diagonal = @private Float_used (N,) # main diagonal of A
+    upper = @private Float_used (N - 1,) # superdiagonal of A
+
+    # load RHS into b
+    if direction == Val(:x)
+        for l in 1:N
+            b[l] = RHS[k, ij, l]
+        end
+    else # direction == Val(:y)
+        for l in 1:N
+            b[l] = RHS[k, l, ij]
+        end
+    end
+
+    build_thomas_matrix!(lower, diagonal, upper, material_accessor, gridx, gridy, gridz, dt, k, ij, valN, direction)
+
     # thomas algorithm:
     for l in 2:N
         w = lower[l-1] / diagonal[l-1]
@@ -242,6 +254,137 @@ end
 end
 
 """
+    thomas_precompute_factors!(W, invD, Uinv, material_accessor, gridx, gridy, gridz, dt, Val(N), Val(direction))
+
+One-time precomputation of the Thomas-algorithm factorization of `(I - dt*A)` for
+every grid line in the given direction.
+
+The tridiagonal matrices of the ADI implicit solves depend only on `dt`, the grid, and
+the (time-independent) material distribution, so the expensive part of the Thomas
+algorithm — building the matrix and the forward elimination of the diagonal — can be
+done once and reused every time step. Stored per grid point:
+
+- `W`: forward-elimination multipliers `w[l] = lower[l-1] / d'[l-1]`
+- `invD`: reciprocals of the eliminated diagonal `1 / d'[l]`
+- `Uinv`: superdiagonal scaled by the reciprocal diagonal `upper[l] / d'[l]`
+
+With these, [`thomas_solve_precomputed!`](@ref) reduces each implicit solve to one
+forward and one backward sweep of fused multiply-adds with no divisions and no
+per-thread private arrays.
+
+Arrays are indexed `[k, ij, l]` for the x-direction and `[k, l, ij]` for the
+y-direction, matching the temperature array layout `(Nz, Ny, Nx)`.
+"""
+@kernel inbounds = true function thomas_precompute_factors!(W, invD, Uinv, material_accessor, @Const(gridx), @Const(gridy), @Const(gridz), dt, valN::Val{N}, direction::Val{xy}) where {N,xy}
+    k, ij = @index(Global, NTuple)
+
+    @uniform Float_used = eltype(W)
+
+    # private memory (only used once, during precomputation)
+    lower = @private Float_used (N,)
+    diagonal = @private Float_used (N,)
+    upper = @private Float_used (N - 1,)
+
+    build_thomas_matrix!(lower, diagonal, upper, material_accessor, gridx, gridy, gridz, dt, k, ij, valN, direction)
+
+    # forward elimination of the diagonal (identical arithmetic to thomas_I_minus_A!)
+    if direction == Val(:x)
+        W[k, ij, 1] = zero(Float_used)
+        for l in 2:N
+            w = lower[l-1] / diagonal[l-1]
+            diagonal[l] -= w * upper[l-1]
+            W[k, ij, l] = w
+        end
+        for l in 1:N
+            inv_d = 1 / diagonal[l]
+            invD[k, ij, l] = inv_d
+            Uinv[k, ij, l] = (l < N) ? upper[l] * inv_d : zero(Float_used)
+        end
+    else # direction == Val(:y)
+        W[k, 1, ij] = zero(Float_used)
+        for l in 2:N
+            w = lower[l-1] / diagonal[l-1]
+            diagonal[l] -= w * upper[l-1]
+            W[k, l, ij] = w
+        end
+        for l in 1:N
+            inv_d = 1 / diagonal[l]
+            invD[k, l, ij] = inv_d
+            Uinv[k, l, ij] = (l < N) ? upper[l] * inv_d : zero(Float_used)
+        end
+    end
+end
+
+"""
+    thomas_solve_precomputed!(U, RHS, W, invD, Uinv, Val(N), Val(direction))
+
+Solve `(I - dt*A) U = RHS` along every grid line using the factorization precomputed
+by [`thomas_precompute_factors!`](@ref).
+
+Forward sweep: `b'[l] = RHS[l] - W[l] * b'[l-1]` (written into `U` as scratch).
+Backward sweep: `U[l] = b'[l] * invD[l] - Uinv[l] * U[l+1]`.
+
+All memory accesses are coalesced (consecutive threads differ in `k`, the fastest
+array index) and the running value of each sweep is carried in a register, so the
+kernel needs no per-thread private arrays.
+"""
+@kernel inbounds = true function thomas_solve_precomputed!(U, @Const(RHS), @Const(W), @Const(invD), @Const(Uinv), ::Val{N}, direction::Val{xy}) where {N,xy}
+    k, ij = @index(Global, NTuple)
+
+    if direction == Val(:x)
+        # forward elimination, U used as scratch for the modified RHS
+        b_prev = RHS[k, ij, 1]
+        U[k, ij, 1] = b_prev
+        for l in 2:N
+            b_prev = RHS[k, ij, l] - W[k, ij, l] * b_prev
+            U[k, ij, l] = b_prev
+        end
+        # backward substitution
+        x_next = b_prev * invD[k, ij, N]
+        U[k, ij, N] = x_next
+        for l in (N-1):-1:1
+            x_next = U[k, ij, l] * invD[k, ij, l] - Uinv[k, ij, l] * x_next
+            U[k, ij, l] = x_next
+        end
+    else # direction == Val(:y)
+        b_prev = RHS[k, 1, ij]
+        U[k, 1, ij] = b_prev
+        for l in 2:N
+            b_prev = RHS[k, l, ij] - W[k, l, ij] * b_prev
+            U[k, l, ij] = b_prev
+        end
+        x_next = b_prev * invD[k, N, ij]
+        U[k, N, ij] = x_next
+        for l in (N-1):-1:1
+            x_next = U[k, l, ij] * invD[k, l, ij] - Uinv[k, l, ij] * x_next
+            U[k, l, ij] = x_next
+        end
+    end
+end
+
+"""
+    update_thomas_factors!(cache, dt)
+
+Recompute the precomputed Thomas factorization if `dt` changed since the last call
+(no-op when the factors are up to date or precomputation is disabled).
+
+With a constant time step this triggers exactly once, at the first ADI step.
+"""
+function update_thomas_factors!(cache, dt)
+    cache.thomas_factors === nothing && return nothing
+    cache.thomas_factors.dt[] == dt && return nothing
+
+    (; backend, material_accessor, gridx, gridy, gridz, Nx, Ny, Nz, ValNx, ValNy, Val_in_x, Val_in_y) = cache
+    (; W_x, invD_x, Uinv_x, W_y, invD_y, Uinv_y) = cache.thomas_factors
+
+    thomas_precompute_factors!(backend)(W_x, invD_x, Uinv_x, material_accessor, gridx, gridy, gridz, dt, ValNx, Val_in_x, ndrange=(Nz, Ny))
+    thomas_precompute_factors!(backend)(W_y, invD_y, Uinv_y, material_accessor, gridx, gridy, gridz, dt, ValNy, Val_in_y, ndrange=(Nz, Nx))
+
+    cache.thomas_factors.dt[] = dt
+    return nothing
+end
+
+"""
     advection!(ϕ, dt, t, cache, boreholes)
 
 Apply advective heat transport in the borehole pipes using a semi-Lagrangian method.
@@ -257,73 +400,182 @@ point, then interpolates the temperature there using linear interpolation betwee
 At the turnaround point at the bottom of the borehole (depth `h`), where water transitions 
 from the inner pipe to the outer annulus, perfect mixing of temperature is assumed.
 """
+# workgroup size of the mean-reduction kernels (must be a power of two,
+# matching the unrolled tree reduction in _workgroup_tree_reduction!)
+const REDUCTION_WG = 256
+
+# advection columns are staged in shared memory by one workgroup; this caps countz
+# (typical values are well below: h=3000 m at dz=10 m gives countz ≈ 300)
+const MAX_FUSED_ADVECTION_COUNTZ = 1024
+
 @inline function advection!(ϕ, dt, t, cache, boreholes)
-    (; u_tmp, Idx_list, Idx_list_Inner, Idx_list_Outer, count_outer_per_bh, countxy_inner, countxy_outer, countz, gridx, gridy, gridz, backend, inlet_model, T_outlet, T_outlet_counter, T_turnaround_mean) = cache
+    (; u_tmp, Idx_list, Idx_list_Inner, Idx_list_Outer,
+        count_inner_per_bh, count_outer_per_bh, inner_offset_per_bh, outer_offset_per_bh,
+        countxy_inner, countxy_outer, countz, Val_countz, N_bh, gridz, backend,
+        inlet_model, T_outlet, T_turnaround_mean, bh_h, bh_v_inner, bh_v_outer) = cache
 
-    fill!(T_outlet, 0)
-    fill!(T_outlet_counter, 0)
-    fill!(T_turnaround_mean, 0)
+    kernel_outlet_mean!(backend, (REDUCTION_WG,))(
+        T_outlet, ϕ, Idx_list_Inner, inner_offset_per_bh, count_inner_per_bh,
+        gridz, bh_v_inner, dt, Val(REDUCTION_WG),
+        ndrange=(REDUCTION_WG * N_bh,))
 
-    kernel_accumulate_outlet!(backend)(T_outlet, T_outlet_counter, ϕ, Idx_list_Inner, gridz, boreholes, dt, ndrange=(countxy_inner))
-    T_outlet ./= T_outlet_counter
+    kernel_turnaround_mean!(backend, (REDUCTION_WG,))(
+        T_turnaround_mean, ϕ, Idx_list_Outer, outer_offset_per_bh, count_outer_per_bh,
+        gridz, bh_h, bh_v_outer, dt, countz, Val(REDUCTION_WG),
+        ndrange=(REDUCTION_WG * countz * N_bh,))
 
-
-    kernel_accumulate_turnaround_mean!(backend)(T_turnaround_mean, ϕ, Idx_list_Outer, gridz, count_outer_per_bh, boreholes, ndrange=(countz, countxy_outer))
-
-    kernel_advection!(backend)(u_tmp, ϕ, gridx, gridy, gridz, Idx_list, Idx_list_Outer, T_turnaround_mean, countxy_inner, dt, t, boreholes, inlet_model, T_outlet, ndrange=(countz, countxy_inner + countxy_outer))
-
-    kernel_copy_advection!(backend)(ϕ, u_tmp, Idx_list, ndrange=(countz, countxy_inner + countxy_outer))
+    if u_tmp === nothing
+        kernel_advection_fused!(backend, (countz, 1))(
+            ϕ, gridz, Idx_list, T_turnaround_mean, countxy_inner, dt, t,
+            bh_h, bh_v_inner, bh_v_outer, inlet_model, T_outlet, Val_countz,
+            ndrange=(countz, countxy_inner + countxy_outer))
+    else
+        kernel_advection!(backend)(u_tmp, ϕ, gridz, Idx_list, T_turnaround_mean, countxy_inner, dt, t, bh_h, bh_v_inner, bh_v_outer, inlet_model, T_outlet, ndrange=(countz, countxy_inner + countxy_outer))
+        kernel_copy_advection!(backend)(ϕ, u_tmp, Idx_list, ndrange=(countz, countxy_inner + countxy_outer))
+    end
 
     return nothing
 end
 
-@kernel inbounds = true function kernel_accumulate_turnaround_mean!(T_turnaround_mean, @Const(ϕ), @Const(Idx_list_Outer), @Const(gridz), @Const(count_outer_per_bh), boreholes)
-    k, ij_xy = @index(Global, NTuple)
+"""
+    kernel_outlet_mean!(T_outlet, ϕ, Idx_list_Inner, inner_offset_per_bh, count_inner_per_bh,
+                        gridz, bh_v_inner, dt, Val(WG))
 
-    i, j, n_bh = Idx_list_Outer[ij_xy]
-    h = boreholes[n_bh].h
+Compute the outlet temperature of each borehole as the mean of `ϕ` over the inner-pipe
+cells within the outlet region `z <= v_inner * dt`.
 
-    if gridz[k] <= h
-        # FIXME this currently assumes a uniform gird in x and y direction for the mean!
-        @atomic T_turnaround_mean[k, n_bh] += (ϕ[k, j, i] / count_outer_per_bh[n_bh])
+One workgroup per borehole performs a deterministic shared-memory tree reduction
+(no atomics, no zero-initialised accumulators, and the cell count is computed
+directly instead of being counted atomically).
+"""
+@inline function _outlet_nlev_cnt_total(gridz, bh_v_inner, count_inner_per_bh, n_bh, dt)
+    z_max = bh_v_inner[n_bh] * dt
+
+    # number of z-levels in the outlet region (gridz is sorted ascending)
+    nlev = 0
+    for k in 1:length(gridz)
+        gridz[k] > z_max && break
+        nlev += 1
+    end
+
+    cnt = count_inner_per_bh[n_bh]
+    return nlev, cnt * nlev
+end
+
+@kernel inbounds = true function kernel_outlet_mean!(T_outlet, @Const(ϕ), @Const(Idx_list_Inner),
+    @Const(inner_offset_per_bh), @Const(count_inner_per_bh), @Const(gridz), @Const(bh_v_inner), dt, ::Val{WG}) where {WG}
+    n_bh = @index(Group, Linear)
+    w = @index(Local, Linear)
+
+    shared = @localmem eltype(ϕ) (WG,)
+
+    nlev, total = _outlet_nlev_cnt_total(gridz, bh_v_inner, count_inner_per_bh, n_bh, dt)
+    off = inner_offset_per_bh[n_bh]
+
+    # strided partial sums over all (cell, level) pairs of this borehole
+    s = zero(eltype(ϕ))
+    idx = w
+    while idx <= total
+        p = (idx - 1) ÷ nlev + 1
+        k = (idx - 1) % nlev + 1
+        i, j, _ = Idx_list_Inner[off+p]
+        s += ϕ[k, j, i]
+        idx += WG
+    end
+    shared[w] = s
+    @synchronize
+
+    # values do not persist across @synchronize on the CPU backend -> re-derive
+    n_bh = @index(Group, Linear)
+    w = @index(Local, Linear)
+
+    # deterministic (bit-reproducible) serial reduction of the partial sums,
+    # in contrast to the scheduling-dependent ordering of atomic accumulation
+    if w == 1
+        _, total2 = _outlet_nlev_cnt_total(gridz, bh_v_inner, count_inner_per_bh, n_bh, dt)
+        total_sum = zero(eltype(ϕ))
+        for m in 1:WG
+            total_sum += shared[m]
+        end
+        T_outlet[n_bh] = total_sum / total2
     end
 end
 
+"""
+    kernel_turnaround_mean!(T_turnaround_mean, ϕ, Idx_list_Outer, outer_offset_per_bh,
+                            count_outer_per_bh, gridz, bh_h, bh_v_outer, dt, countz, Val(WG))
 
-@kernel function kernel_accumulate_outlet!(T_sum, T_outlet_counter, @Const(ϕ), @Const(Idx_list_Inner),
-    @Const(gridz), boreholes, dt)
-    ij_xy = @index(Global)
+Compute the mean temperature over the outer-pipe (annulus) cells of each borehole for
+every z-level, used as the perfectly-mixed turnaround temperature.
 
-    i, j, n_bh = Idx_list_Inner[ij_xy]
-    bh = boreholes[n_bh]
-    z_max = bh.v_inner * dt
+One workgroup per `(z-level, borehole)` pair performs a deterministic shared-memory
+tree reduction (no atomics). Only the z-levels that the turnaround interpolation can
+actually read are reduced: departure points lie in `[h - v_outer*dt, h]`, so only the
+bracketing grid levels matter (factor 2 on the window as a generous safety margin for
+round-off). All other entries are set to zero (never read).
+"""
+@kernel inbounds = true function kernel_turnaround_mean!(T_turnaround_mean, @Const(ϕ), @Const(Idx_list_Outer),
+    @Const(outer_offset_per_bh), @Const(count_outer_per_bh), @Const(gridz), @Const(bh_h), @Const(bh_v_outer), dt, countz, ::Val{WG}) where {WG}
+    g = @index(Group, Linear)
+    w = @index(Local, Linear)
 
-    # Loop over z in outlet region
-    for (k, z) in enumerate(gridz)
-        if z <= z_max
-            @atomic T_sum[n_bh] += ϕ[k, j, i]
-            @atomic T_outlet_counter[n_bh] += 1
+    shared = @localmem eltype(ϕ) (WG,)
+
+    k = (g - 1) % countz + 1
+    n_bh = (g - 1) ÷ countz + 1
+
+    h = bh_h[n_bh]
+    k_next = min(k + 1, length(gridz))
+    active = gridz[k] <= h && gridz[k_next] >= h - 2 * bh_v_outer[n_bh] * dt
+
+    cnt = count_outer_per_bh[n_bh]
+    s = zero(eltype(ϕ))
+    if active
+        off = outer_offset_per_bh[n_bh]
+        # FIXME this currently assumes a uniform gird in x and y direction for the mean!
+        p = w
+        while p <= cnt
+            i, j, _ = Idx_list_Outer[off+p]
+            s += ϕ[k, j, i]
+            p += WG
         end
     end
+    shared[w] = s
+    @synchronize
+
+    # values do not persist across @synchronize on the CPU backend -> re-derive
+    g = @index(Group, Linear)
+    w = @index(Local, Linear)
+
+    # deterministic (bit-reproducible) serial reduction of the partial sums
+    if w == 1
+        k = (g - 1) % countz + 1
+        n_bh = (g - 1) ÷ countz + 1
+        total_sum = zero(eltype(ϕ))
+        for m in 1:WG
+            total_sum += shared[m]
+        end
+        T_turnaround_mean[k, n_bh] = total_sum / count_outer_per_bh[n_bh]
+    end
 end
 
 
-@kernel inbounds = true function kernel_advection!(u_tmp, @Const(ϕ), @Const(gridx), @Const(gridy), @Const(gridz), @Const(Idx_list), @Const(Idx_list_Outer), @Const(T_turnaround_mean), countxy_inner, Δt, t, boreholes, inlet_model, T_outlet)
+@kernel inbounds = true function kernel_advection!(u_tmp, @Const(ϕ), @Const(gridz), @Const(Idx_list), @Const(T_turnaround_mean), countxy_inner, Δt, t, @Const(bh_h), @Const(bh_v_inner), @Const(bh_v_outer), inlet_model, T_outlet)
     k, ij_xy = @index(Global, NTuple)
 
     i, j, n_bh = Idx_list[ij_xy]
-    x, y, z = gridx[i], gridy[j], gridz[k]
+    z = gridz[k]
 
-    v_inner = boreholes[n_bh].v_inner
-    v_outer = boreholes[n_bh].v_outer
-    h = boreholes[n_bh].h
+    v_inner = bh_v_inner[n_bh]
+    v_outer = bh_v_outer[n_bh]
+    h = bh_h[n_bh]
 
 
     # Below this borehole's pipe: no advection, just preserve original
     # this only comes into play if there are different borehole heights
     # Hack to have easier indexing. (See generate cache)
     if z > h
-        u_tmp[ij_xy, k] = ϕ[k, j, i]
+        u_tmp[k, ij_xy] = ϕ[k, j, i]
 
     else
         if ij_xy <= countxy_inner # r < r_inner && z <= h
@@ -344,27 +596,97 @@ end
                 # Inner pipe turnaround - mean temperature from outer pipe
 
 
-                u_tmp[ij_xy, k] = (1 - α) * T_turnaround_mean[k_departure_left, n_bh] + α * T_turnaround_mean[k_departure_right, n_bh]
+                u_tmp[k, ij_xy] = (1 - α) * T_turnaround_mean[k_departure_left, n_bh] + α * T_turnaround_mean[k_departure_right, n_bh]
 
 
             else
                 k_departure_left, k_departure_right, α = interpolation_helper(gridz, z_departure)
 
-                u_tmp[ij_xy, k] = (1 - α) * ϕ[k_departure_left, j, i] + α * ϕ[k_departure_right, j, i]
+                u_tmp[k, ij_xy] = (1 - α) * ϕ[k_departure_left, j, i] + α * ϕ[k_departure_right, j, i]
 
             end
 
         else # r_inner + t_inner <= r < r_outer_thickness && z <= h
             z_departure = z - v_outer * Δt
             if z_departure <= 0.0
-                u_tmp[ij_xy, k] = inlet_model(n_bh, T_outlet, t)
+                u_tmp[k, ij_xy] = inlet_model(n_bh, T_outlet, t)
             else
                 k_departure_left, k_departure_right, α = interpolation_helper(gridz, z_departure)
 
-                u_tmp[ij_xy, k] = (1 - α) * ϕ[k_departure_left, j, i] + α * ϕ[k_departure_right, j, i]
+                u_tmp[k, ij_xy] = (1 - α) * ϕ[k_departure_left, j, i] + α * ϕ[k_departure_right, j, i]
 
             end
 
+        end
+    end
+end
+
+"""
+    kernel_advection_fused!(ϕ, gridz, Idx_list, T_turnaround_mean, countxy_inner, Δt, t,
+                            bh_h, bh_v_inner, bh_v_outer, inlet_model, T_outlet, Val(CZ))
+
+Fused version of [`kernel_advection!`](@ref) + [`kernel_copy_advection!`](@ref) that
+updates `ϕ` in place.
+
+The semi-Lagrangian update only reads `ϕ` within the same `(i, j)` column, so one
+workgroup spanning all `CZ = countz` z-levels of a column stages that column in shared
+memory, synchronizes, and writes the advected values directly back to `ϕ`. This
+eliminates the `u_tmp` scratch array, its memory round-trip, and one kernel launch.
+Requires a workgroup of size `(countz, 1)`.
+"""
+@kernel inbounds = true function kernel_advection_fused!(ϕ, @Const(gridz), @Const(Idx_list), @Const(T_turnaround_mean), countxy_inner, Δt, t, @Const(bh_h), @Const(bh_v_inner), @Const(bh_v_outer), inlet_model, @Const(T_outlet), ::Val{CZ}) where {CZ}
+    k, ij_xy = @index(Global, NTuple)
+
+    col = @localmem eltype(ϕ) (CZ,)
+
+    # stage this column of ϕ in shared memory
+    begin
+        i, j, _ = Idx_list[ij_xy]
+        col[k] = ϕ[k, j, i]
+    end
+    @synchronize
+
+    # values do not persist across @synchronize on the CPU backend -> re-derive
+    k, ij_xy = @index(Global, NTuple)
+    i, j, n_bh = Idx_list[ij_xy]
+    z = gridz[k]
+
+    v_inner = bh_v_inner[n_bh]
+    v_outer = bh_v_outer[n_bh]
+    h = bh_h[n_bh]
+
+    # Below this borehole's pipe (only for differing borehole heights): no advection,
+    # ϕ already holds the correct value, nothing to write.
+    if z <= h
+        if ij_xy <= countxy_inner # r < r_inner && z <= h
+            z_departure = z + v_inner * Δt
+            if z_departure > h
+                # time to h
+                Δt1 = (h - z) / v_inner
+                # remaining time
+                Δt2 = Δt - Δt1
+                z_departure2 = h - v_outer * Δt2
+
+                k_departure_left, k_departure_right, α = interpolation_helper(gridz, z_departure2)
+
+                # use mean temperature at turnaround => avoids artificial heat source
+                # (perfect mixing at the turnaround)
+                ϕ[k, j, i] = (1 - α) * T_turnaround_mean[k_departure_left, n_bh] + α * T_turnaround_mean[k_departure_right, n_bh]
+            else
+                k_departure_left, k_departure_right, α = interpolation_helper(gridz, z_departure)
+
+                ϕ[k, j, i] = (1 - α) * col[k_departure_left] + α * col[k_departure_right]
+            end
+
+        else # r_inner + t_inner <= r < r_outer_thickness && z <= h
+            z_departure = z - v_outer * Δt
+            if z_departure <= 0.0
+                ϕ[k, j, i] = inlet_model(n_bh, T_outlet, t)
+            else
+                k_departure_left, k_departure_right, α = interpolation_helper(gridz, z_departure)
+
+                ϕ[k, j, i] = (1 - α) * col[k_departure_left] + α * col[k_departure_right]
+            end
         end
     end
 end
@@ -402,7 +724,7 @@ end
     k, ij_xy = @index(Global, NTuple)
     i, j = IDX_LIST[ij_xy]
 
-    ϕ[k, j, i] = u_tmp[ij_xy, k]
+    ϕ[k, j, i] = u_tmp[k, ij_xy]
 end
 
 
@@ -486,9 +808,13 @@ function ADI_and_ADV_step!(integrator, t, Δt)
     temp = integrator.uprev
 
     (; backend, material_accessor, gridx, gridy, gridz, Nx, Ny, Nz, boreholes,
+        thomas_factors,
         Val_in_x, Val_in_y,
         ValTrue,
         ValNx, ValNy) = integrator.p
+
+    # recompute the implicit-solve factorization if Δt changed (once for constant Δt)
+    update_thomas_factors!(integrator.p, Δt / 2)
 
     ## ADI dt/2 with advection dt/2 step
     # Y direction explicit / (I + 0.5dt*A_y) * ϕ
@@ -498,7 +824,11 @@ function ADI_and_ADV_step!(integrator, t, Δt)
     advection!(temp, Δt / 2, t, integrator.p, boreholes)
 
     # X direction implicit (I - 0.5dt *  A_x) \ temp
-    thomas_I_minus_A!(backend)(ϕ, temp, material_accessor, gridx, gridy, gridz, Δt / 2, ValNx, Val_in_x, ndrange=(Nz, Ny))
+    if thomas_factors === nothing
+        thomas_I_minus_A!(backend)(ϕ, temp, material_accessor, gridx, gridy, gridz, Δt / 2, ValNx, Val_in_x, ndrange=(Nz, Ny))
+    else
+        thomas_solve_precomputed!(backend)(ϕ, temp, thomas_factors.W_x, thomas_factors.invD_x, thomas_factors.Uinv_x, ValNx, Val_in_x, ndrange=(Nz, Ny))
+    end
 
 
     ## ADI dt/2 with advection dt/2 step
@@ -509,7 +839,11 @@ function ADI_and_ADV_step!(integrator, t, Δt)
     advection!(temp, Δt / 2, t + Δt / 2, integrator.p, boreholes)
 
     # Y direction implicit (I - 0.5dt *  A_y) \ temp
-    thomas_I_minus_A!(backend)(ϕ, temp, material_accessor, gridx, gridy, gridz, Δt / 2, ValNy, Val_in_y, ndrange=(Nz, Nx))
+    if thomas_factors === nothing
+        thomas_I_minus_A!(backend)(ϕ, temp, material_accessor, gridx, gridy, gridz, Δt / 2, ValNy, Val_in_y, ndrange=(Nz, Nx))
+    else
+        thomas_solve_precomputed!(backend)(ϕ, temp, thomas_factors.W_y, thomas_factors.invD_y, thomas_factors.Uinv_y, ValNy, Val_in_y, ndrange=(Nz, Nx))
+    end
 
     return nothing
 end

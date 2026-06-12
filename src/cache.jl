@@ -76,7 +76,7 @@ Returns tuple with index lists for efficient advection kernel dispatch.
 """
 function create_advection_index_lists(backend, gridx, gridy, gridz, boreholes)
 
-    # calculate index map
+    # calculate index map (grouped by borehole, in borehole order)
     Idx_list_Inner = Vector{Tuple{Int,Int,Int}}()
     Idx_list_Outer = Vector{Tuple{Int,Int,Int}}()
     gridx_cpu = adapt(CPU(), gridx)
@@ -93,12 +93,21 @@ function create_advection_index_lists(backend, gridx, gridy, gridz, boreholes)
         end
     end
 
-    # number of outer cells in each borehole
-    count_outer_per_bh = zeros(CPU(), Int, length(boreholes))
-    for (_, _, bh_idx) in Idx_list_Outer
-        count_outer_per_bh[bh_idx] += 1
+    # number of inner/outer cells of each borehole and the offsets of each
+    # borehole's (contiguous) block within the index lists
+    N_bh = length(boreholes)
+    count_inner_per_bh_cpu = Base.zeros(Int, N_bh)
+    for (_, _, bh_idx) in Idx_list_Inner
+        count_inner_per_bh_cpu[bh_idx] += 1
     end
-    count_outer_per_bh = adapt(backend, count_outer_per_bh)
+    count_outer_per_bh_cpu = Base.zeros(Int, N_bh)
+    for (_, _, bh_idx) in Idx_list_Outer
+        count_outer_per_bh_cpu[bh_idx] += 1
+    end
+    inner_offset_per_bh = adapt(backend, cumsum(count_inner_per_bh_cpu) .- count_inner_per_bh_cpu)
+    outer_offset_per_bh = adapt(backend, cumsum(count_outer_per_bh_cpu) .- count_outer_per_bh_cpu)
+    count_inner_per_bh = adapt(backend, count_inner_per_bh_cpu)
+    count_outer_per_bh = adapt(backend, count_outer_per_bh_cpu)
 
     countxy_inner = length(Idx_list_Inner)
     countxy_outer = length(Idx_list_Outer)
@@ -113,13 +122,24 @@ function create_advection_index_lists(backend, gridx, gridy, gridz, boreholes)
     max_h = maximum(bh.h for bh in boreholes)
     countz = sum(gridz .<= max_h)
 
-    u_tmp = zeros(backend, eltype(gridx), countxy_inner + countxy_outer, countz)
+    # the fused advection kernel stages one (i,j) column of ϕ in shared memory and
+    # needs a workgroup spanning all countz levels; fall back to the two-kernel
+    # u_tmp version when countz exceeds the maximum workgroup size
+    if countz <= MAX_FUSED_ADVECTION_COUNTZ
+        u_tmp = nothing
+    else
+        # layout (countz, countxy): consecutive threads (fastest in k) access consecutive memory
+        u_tmp = zeros(backend, eltype(gridx), countz, countxy_inner + countxy_outer)
+    end
 
-    return (Idx_list_Inner, Idx_list_Outer, Idx_list, count_outer_per_bh, countxy_inner, countxy_outer, countz, u_tmp)
+    return (Idx_list_Inner, Idx_list_Outer, Idx_list,
+        count_inner_per_bh, count_outer_per_bh, inner_offset_per_bh, outer_offset_per_bh,
+        countxy_inner, countxy_outer, countz, u_tmp)
 end
 
 """
-    create_cache(; backend, gridx, gridy, gridz, materials, boreholes, inlet_model, precompute_materials=true)
+    create_cache(; backend, gridx, gridy, gridz, materials, boreholes, inlet_model,
+                   precompute_materials=:auto, precompute_thomas=true)
 
 Create simulation cache.
 
@@ -138,19 +158,27 @@ You can override the automatic choice manually:
 - `precompute_materials=true` or `:precomputed`
 - `precompute_materials=false` or `:on_the_fly`
 
+With `precompute_thomas=true` (the default), the tridiagonal factorizations of the ADI
+implicit solves are precomputed once (they depend only on the constant time step, the
+grid, and the time-independent material distribution) and each implicit solve becomes a
+lean two-sweep kernel. This costs six additional arrays of the size of the temperature
+field but speeds up the dominant ADI solves considerably. Set `precompute_thomas=false`
+to rebuild the systems in every solve (lower memory footprint, original behavior).
+
 Returns named tuple containing grids, materials, index lists, outlet temperature arrays,
 eigenvalue estimates, material accessor, and precomputed `Val` types for kernel dispatch.
 """
-function create_cache(; backend, gridx, gridy, gridz, materials, boreholes, inlet_model, precompute_materials=:auto)
+function create_cache(; backend, gridx, gridy, gridz, materials, boreholes, inlet_model, precompute_materials=:auto, precompute_thomas=true)
 
     Nx, Ny, Nz = length(gridx), length(gridy), length(gridz)
     N_bh = length(boreholes)
     material_mode = _material_mode(precompute_materials, N_bh)
 
-    Idx_list_Inner, Idx_list_Outer, Idx_list, count_outer_per_bh, countxy_inner, countxy_outer, countz, u_tmp = create_advection_index_lists(backend, gridx, gridy, gridz, boreholes)
+    Idx_list_Inner, Idx_list_Outer, Idx_list,
+    count_inner_per_bh, count_outer_per_bh, inner_offset_per_bh, outer_offset_per_bh,
+    countxy_inner, countxy_outer, countz, u_tmp = create_advection_index_lists(backend, gridx, gridy, gridz, boreholes)
 
     T_outlet = zeros(backend, eltype(gridx), N_bh)
-    T_outlet_counter = zeros(backend, Int, N_bh)
 
     T_turnaround_mean = zeros(backend, eltype(gridx), countz, N_bh)
 
@@ -187,7 +215,29 @@ function create_cache(; backend, gridx, gridy, gridz, materials, boreholes, inle
         material_accessor = OnTheFlyMaterialAccessor(boreholes, materials)
     end
 
+    # per-borehole scalar properties as flat arrays for the advection kernels
+    # (dynamically indexing into the boreholes tuple inside a kernel generates very
+    # inefficient GPU code that gets worse with the number of boreholes)
+    Float_used = eltype(gridx)
+    bh_h = adapt(backend, Float_used[bh.h for bh in boreholes])
+    bh_v_inner = adapt(backend, Float_used[bh.v_inner for bh in boreholes])
+    bh_v_outer = adapt(backend, Float_used[bh.v_outer for bh in boreholes])
 
+    # storage for the precomputed Thomas factorization of the ADI implicit solves;
+    # filled lazily by update_thomas_factors! once the time step is known
+    if precompute_thomas
+        thomas_factors = (;
+            dt=Ref(NaN), # Float64 so the comparison with the integrator's dt is exact
+            W_x=zeros(backend, Float_used, Nz, Ny, Nx),
+            invD_x=zeros(backend, Float_used, Nz, Ny, Nx),
+            Uinv_x=zeros(backend, Float_used, Nz, Ny, Nx),
+            W_y=zeros(backend, Float_used, Nz, Ny, Nx),
+            invD_y=zeros(backend, Float_used, Nz, Ny, Nx),
+            Uinv_y=zeros(backend, Float_used, Nz, Ny, Nx),
+        )
+    else
+        thomas_factors = nothing
+    end
 
     cache = (;
         backend,
@@ -203,16 +253,23 @@ function create_cache(; backend, gridx, gridy, gridz, materials, boreholes, inle
         boreholes,
         inlet_model,
         T_outlet,
-        T_outlet_counter,
         T_turnaround_mean,
         u_tmp,
         Idx_list_Inner,
         Idx_list_Outer,
         Idx_list,
+        count_inner_per_bh,
         count_outer_per_bh,
+        inner_offset_per_bh,
+        outer_offset_per_bh,
         countxy_inner,
         countxy_outer,
         countz,
+        Val_countz=Val(countz),
+        bh_h,
+        bh_v_inner,
+        bh_v_outer,
+        thomas_factors,
         eigen_estimate,
         ValNx,
         ValNy,
